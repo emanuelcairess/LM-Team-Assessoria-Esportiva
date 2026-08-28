@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <pattern id="carbonFavicon" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="16" height="16" fill="#06070a" />
+      <line x1="0" y1="0" x2="0" y2="16" stroke="#141822" stroke-width="4" />
+      <line x1="8" y1="0" x2="8" y2="16" stroke="#222836" stroke-width="4" />
+    </pattern>
+
+    <linearGradient id="goldFavicon" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="25%" stop-color="#fef08a" />
+      <stop offset="50%" stop-color="#eab308" />
+      <stop offset="80%" stop-color="#ca8a04" />
+      <stop offset="100%" stop-color="#713f12" />
+    </linearGradient>
+
+    <linearGradient id="goldShadowFavicon" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#854d0e" />
+      <stop offset="100%" stop-color="#2c1602" />
+    </linearGradient>
+
+    <filter id="favShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#000000" flood-opacity="0.9" />
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" rx="118" fill="url(#carbonFavicon)" />
+  <rect x="6" y="6" width="500" height="500" rx="112" fill="none" stroke="url(#goldFavicon)" stroke-width="2" stroke-opacity="0.4" />
+
+  <!-- LION PROFILE -->
+  <g filter="url(#favShadow)">
+    <path
+      d="M256 68 C294 68 328 88 344 120 C358 104 378 98 396 104 C384 128 388 148 402 160 C420 148 440 156 446 176 C428 194 432 218 448 230 C430 248 424 272 418 296 C392 284 374 290 362 308 C340 274 304 262 278 262 C252 226 222 202 188 190 C206 166 214 144 206 118 C224 108 242 88 256 68 Z"
+      fill="url(#goldFavicon)"
+    />
+    <path
+      d="M256 68 C226 104 214 146 196 186 C220 174 244 178 262 196 C244 156 262 116 292 90 Z"
+      fill="url(#goldShadowFavicon)"
+      opacity="0.9"
+    />
+    <path
+      d="M344 120 C332 152 342 182 372 194 C354 172 366 148 384 142 Z"
+      fill="url(#goldShadowFavicon)"
+      opacity="0.8"
+    />
+    <path
+      d="M340 148 C366 148 396 160 414 178 C432 196 442 220 444 244 C426 238 412 244 402 256 C390 238 372 230 360 244 C346 220 334 188 340 148 Z"
+      fill="url(#goldFavicon)"
+    />
+    <path
+      d="M414 212 C438 214 450 228 450 244 C436 258 424 256 414 250 Z"
+      fill="#fef08a"
+    />
+    <path
+      d="M378 174 C388 172 398 176 402 184 C392 186 382 182 378 174 Z"
+      fill="#06070a"
+    />
+    <circle cx="392" cy="180" r="3" fill="#fef08a" />
+  </g>
+
+  <!-- TEXT -->
+  <g filter="url(#favShadow)">
+    <text
+      x="170"
+      y="380"
+      text-anchor="middle"
+      font-family="system-ui, -apple-system, sans-serif"
+      font-weight="900"
+      font-size="64"
+      letter-spacing="5"
+      fill="url(#goldFavicon)"
+    >TEAM</text>
+    <text
+      x="366"
+      y="380"
+      text-anchor="middle"
+      font-family="system-ui, -apple-system, sans-serif"
+      font-weight="900"
+      font-style="italic"
+      font-size="70"
+      letter-spacing="4"
+      fill="url(#goldFavicon)"
+    >LM</text>
+    <text
+      x="256"
+      y="429"
+      text-anchor="middle"
+      font-family="system-ui, -apple-system, sans-serif"
+      font-weight="800"
+      font-size="34"
+      letter-spacing="9"
+      fill="url(#goldFavicon)"
+    >CONSULTORIA</text>
+  </g>
+</svg>

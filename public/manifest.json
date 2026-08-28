@@ -1,0 +1,31 @@
+{
+  "name": "LM Team - Assessoria Esportiva",
+  "short_name": "LM Team",
+  "description": "Assessoria Esportiva Integrada para Médicos, Nutricionistas, Treinadores e Atletas",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#070a13",
+  "theme_color": "#070a13",
+  "categories": ["fitness", "health", "sports", "lifestyle"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

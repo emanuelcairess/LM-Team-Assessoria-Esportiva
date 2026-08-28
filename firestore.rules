@@ -1,0 +1,33 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Prescribers collection (coaches, doctors, nutritionists, administrators)
+    match /prescribers/{prescriberId} {
+      allow read, write: if true;
+    }
+
+    // Exercise Library Bank
+    match /exercises/{exerciseId} {
+      allow read, write: if true;
+    }
+
+    // Athletes collection and their real-time checkin subcollections
+    match /athletes/{athleteId} {
+      allow read, write: if true;
+
+      match /{allSubcollections=**} {
+        allow read, write: if true;
+      }
+    }
+
+    // Prescriptions, workout splits, nutrition plans
+    match /prescriptions/{allPaths=**} {
+      allow read, write: if true;
+    }
+
+    // Fallback for app documents
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

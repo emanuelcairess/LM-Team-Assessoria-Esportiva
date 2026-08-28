@@ -1,0 +1,98 @@
+{
+  "entities": {
+    "athlete": {
+      "title": "Athlete Profile",
+      "description": "Athlete registration with contact, passwords, and biometric metrics",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "cpf": { "type": "string" },
+        "birthDate": { "type": "string" },
+        "status": { "type": "string" },
+        "email": { "type": "string" },
+        "category": { "type": "string" },
+        "currentWeightKg": { "type": "number" },
+        "coachName": { "type": "string" },
+        "accessPassword": { "type": "string" },
+        "passwordChangedAt": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "prescriber": {
+      "title": "Prescriber Profile",
+      "description": "Clinical and coaching team profile with role permissions and access password",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "roleType": { "type": "string" },
+        "phone": { "type": "string" },
+        "birthDate": { "type": "string" },
+        "email": { "type": "string" },
+        "accessPassword": { "type": "string" },
+        "isMaster": { "type": "boolean" },
+        "isAdmin": { "type": "boolean" },
+        "status": { "type": "string" },
+        "requiresPasswordChange": { "type": "boolean" },
+        "passwordChangedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "phone"]
+    },
+    "checkin": {
+      "title": "Check-in Record",
+      "description": "Daily check-in for exercise sets, nutrition, and supplements",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "athleteId": { "type": "string" },
+        "domain": { "type": "string" },
+        "payload": { "type": "object" },
+        "syncedAt": { "type": "number" }
+      },
+      "required": ["id", "athleteId", "domain"]
+    },
+    "exercise": {
+      "title": "Exercise Library Item",
+      "description": "Cataloged exercise with muscle group, technical notes, cadence, and default prescription metrics",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "targetMuscle": { "type": "string" },
+        "subMuscle": { "type": "string" },
+        "equipment": { "type": "string" },
+        "defaultRestSeconds": { "type": "number" },
+        "defaultSetsCount": { "type": "number" },
+        "defaultRepsTarget": { "type": "string" },
+        "defaultTechnique": { "type": "string" },
+        "cadence": { "type": "string" },
+        "technicalNotes": { "type": "string" },
+        "videoDemoUrl": { "type": "string" },
+        "isCustom": { "type": "boolean" },
+        "usageCount": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "targetMuscle"]
+    }
+  },
+  "firestore": {
+    "/exercises/{exerciseId}": {
+      "schema": "exercise",
+      "description": "Exercise bank library items accessible across all coaches and athlete workout prescriptions"
+    },
+    "/prescribers/{prescriberId}": {
+      "schema": "prescriber",
+      "description": "Prescriber document for coaches, doctors, nutritionists, and administrators"
+    },
+    "/athletes/{athleteId}": {
+      "schema": "athlete",
+      "description": "Individual athlete document"
+    },
+    "/athletes/{athleteId}/checkins/{checkinId}": {
+      "schema": "checkin",
+      "description": "Real-time athlete sync check-ins"
+    }
+  }
+}

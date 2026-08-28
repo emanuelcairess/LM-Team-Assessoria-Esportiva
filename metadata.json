@@ -1,0 +1,6 @@
+{
+  "name": "LM Team - Assessoria Esportiva",
+  "description": "Plataforma profissional de assessoria esportiva integrada para médicos, nutricionistas, treinadores e atletas, com design Liquid Glass One UI 9.0.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
