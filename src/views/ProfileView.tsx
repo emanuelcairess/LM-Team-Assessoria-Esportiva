@@ -31,6 +31,7 @@ interface ProfileViewProps {
   onSaveNewAssessment: (newAssessment: AnthropometricData) => void;
   onUpdateAvatar?: (newAvatarUrl: string) => void;
   onLogout?: () => void;
+  onOpenChangePassword?: () => void;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
@@ -38,7 +39,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onOpenReportModal,
   onSaveNewAssessment,
   onUpdateAvatar,
-  onLogout
+  onLogout,
+  onOpenChangePassword
 }) => {
   const history = athlete.measurementsHistory || [];
   const [selectedEvaluationIndex, setSelectedEvaluationIndex] = useState<number>(
@@ -203,6 +205,19 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             >
               <FileText className="w-3.5 h-3.5" /> Laudo PDF
             </button>
+            {onOpenChangePassword && (
+              <button
+                onClick={() => {
+                  soundFx.playClick();
+                  onOpenChangePassword();
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 text-xs font-bold border border-amber-500/30 transition shadow-sm"
+                title="Alterar minha senha de acesso"
+              >
+                <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                <span>Alterar Senha</span>
+              </button>
+            )}
             {onLogout && (
               <button
                 onClick={() => {

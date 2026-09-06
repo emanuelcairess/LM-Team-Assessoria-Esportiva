@@ -22,11 +22,16 @@ import {
   Stethoscope,
   Utensils,
   Dumbbell,
-  ShieldAlert
+  ShieldAlert,
+  Eye,
+  EyeOff,
+  Copy,
+  Dice5
 } from 'lucide-react';
 import { PrescriberProfile, PrescriberRoleType } from '../types';
 import { soundFx } from '../utils/audio';
 import { ImageUploader } from './ImageUploader';
+import { adminService } from '../services/adminService';
 
 interface PrescriberModalProps {
   isOpen: boolean;
@@ -99,13 +104,17 @@ export const PrescriberModal: React.FC<PrescriberModalProps> = ({
   const [phone, setPhone] = useState<string>('');
   const [birthDate, setBirthDate] = useState<string>('');
   const [email, setEmail] = useState<string>('');
-  const [accessPassword, setAccessPassword] = useState<string>('lmteam2026');
   const [crmCrnCref, setCrmCrnCref] = useState<string>('');
   const [avatar, setAvatar] = useState<string>(PRESET_AVATARS[0]);
   const [isMaster, setIsMaster] = useState<boolean>(false);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [status, setStatus] = useState<'Ativo' | 'Inativo'>('Ativo');
   const [bio, setBio] = useState<string>('');
+
+  // Password management for Admins
+  const [password, setPassword] = useState<string>('');
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [copiedPassword, setCopiedPassword] = useState<boolean>(false);
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
@@ -124,7 +133,7 @@ export const PrescriberModal: React.FC<PrescriberModalProps> = ({
       setPhone(prescriberToEdit.phone || '');
       setBirthDate(prescriberToEdit.birthDate || '');
       setEmail(prescriberToEdit.email || '');
-      setAccessPassword(prescriberToEdit.accessPassword || 'lmteam2026');
+      setPassword(prescriberToEdit.password || '');
       setCrmCrnCref(prescriberToEdit.crm_crn_cref || '');
       setAvatar(prescriberToEdit.avatar || PRESET_AVATARS[0]);
       setIsMaster(!!prescriberToEdit.isMaster);
@@ -138,7 +147,7 @@ export const PrescriberModal: React.FC<PrescriberModalProps> = ({
       setPhone('');
       setBirthDate('1990-01-01');
       setEmail('');
-      setAccessPassword('lmteam2026');
+      setPassword('');
       setCrmCrnCref('');
       setAvatar(PRESET_AVATARS[1]);
       setIsMaster(false);
@@ -146,6 +155,8 @@ export const PrescriberModal: React.FC<PrescriberModalProps> = ({
       setStatus('Ativo');
       setBio('');
     }
+    setShowPassword(false);
+    setCopiedPassword(false);
     setFormErrors({});
   }, [prescriberToEdit, isOpen]);
 
@@ -177,6 +188,27 @@ export const PrescriberModal: React.FC<PrescriberModalProps> = ({
     return age > 0 && age < 120 ? age : null;
   };
 
+  // Password generation and copy helpers
+  const generateRandomPassword = () => {
+    soundFx.playClick();
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let res = 'Lm@';
+    for (let i = 0; i < 4; i++) {
+      res += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    res += '!';
+    setPassword(res);
+  };
+
+  const handleCopyAccess = () => {
+    soundFx.playClick();
+    const roleLabel = roleType === 'Outro' ? customRole || 'Profissional' : roleType;
+    const text = `*LM TEAM - ACESSO AO SISTEMA DE PRESCRIÇÃO*\nOlá, *${name || 'Profissional'}*! Seu acesso como *${roleLabel}* foi configurado.\n\n📧 *E-mail:* ${email || '(E-mail corporativo)'}\n🔑 *Senha de Acesso:* ${password || '(Senha mantida)'}\n\n👉 Acesse o painel web ou aplicativo com suas credenciais.`;
+    navigator.clipboard.writeText(text);
+    setCopiedPassword(true);
+    setTimeout(() => setCopiedPassword(false), 2500);
+  };
+
   const currentAge = calculateAge(birthDate);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -189,6 +221,17 @@ export const PrescriberModal: React.FC<PrescriberModalProps> = ({
     }
     if (!birthDate) errors.birthDate = 'Informe a data de nascimento.';
     if (!email.trim() || !email.includes('@')) errors.email = 'Informe um e-mail válido.';
+
+    // Password validation: Admin must define a password when creating a new prescriber
+    if (!prescriberToEdit) {
+      if (!password.trim()) {
+        errors.password = 'O Administrador deve criar a senha de acesso inicial do prescritor.';
+      } else if (password.trim().length < 6) {
+        errors.password = 'A senha de acesso deve ter no mínimo 6 caracteres.';
+      }
+    } else if (password.trim() && password.trim().length < 6) {
+      errors.password = 'A nova senha deve ter no mínimo 6 caracteres.';
+    }
 
     const finalRole = roleType === 'Outro' ? customRole.trim() : roleType;
     if (!finalRole) errors.role = 'Informe a função ou cargo do prescritor.';
@@ -211,15 +254,13 @@ export const PrescriberModal: React.FC<PrescriberModalProps> = ({
       phone: phone.trim(),
       birthDate: birthDate,
       email: email.trim().toLowerCase(),
-      accessPassword: accessPassword.trim() || 'lmteam2026',
+      password: password.trim() ? password.trim() : prescriberToEdit?.password,
       avatar: avatar,
       isMaster: isAdmin ? true : isMaster, // Admin sempre possui privilégio master
       isAdmin: isCurrentUserAdmin ? isAdmin : (prescriberToEdit?.isAdmin || false),
       status: status,
       crm_crn_cref: crmCrnCref.trim() || undefined,
       bio: bio.trim() || undefined,
-      requiresPasswordChange: prescriberToEdit?.requiresPasswordChange,
-      passwordChangedAt: prescriberToEdit?.passwordChangedAt,
       createdAt: prescriberToEdit?.createdAt || new Date().toISOString().split('T')[0],
       createdBy: prescriberToEdit?.createdBy || (currentUser ? {
         id: currentUser.id,
@@ -227,6 +268,13 @@ export const PrescriberModal: React.FC<PrescriberModalProps> = ({
         role: currentUser.roleType
       } : undefined)
     };
+
+    // If a new password was provided and user is admin/master, persist password in backend/auth
+    if (password.trim() && (isCurrentUserAdmin || currentUser?.isAdmin || currentUser?.isMaster)) {
+      adminService.setPrescriberPassword(savedPrescriber.id, password.trim()).catch((err) => {
+        console.warn('Notice setting prescriber password:', err);
+      });
+    }
 
     soundFx.playSuccess();
     onSave(savedPrescriber);
@@ -458,21 +506,64 @@ export const PrescriberModal: React.FC<PrescriberModalProps> = ({
                 )}
               </div>
 
-              {/* Senha */}
+              {/* Senha de Acesso (Gerenciável pelo Administrador) */}
               <div>
-                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
-                  Senha de Acesso / Chave
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">
+                    Senha de Acesso
+                  </label>
+                  {(isCurrentUserAdmin || currentUser?.isAdmin || currentUser?.isMaster) && (
+                    <button
+                      type="button"
+                      onClick={generateRandomPassword}
+                      className="text-[10px] text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1 transition"
+                      title="Gerar senha segura automática"
+                    >
+                      <Dice5 className="w-3 h-3" />
+                      <span>Gerar Senha</span>
+                    </button>
+                  )}
+                </div>
                 <div className="relative">
                   <input
-                    type="text"
-                    value={accessPassword}
-                    onChange={(e) => setAccessPassword(e.target.value)}
-                    placeholder="lmteam2026"
-                    className="w-full px-4 py-3 rounded-2xl bg-black/40 border border-white/15 text-white font-mono text-sm focus:outline-none focus:border-blue-500 transition"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={prescriberToEdit ? 'Deixe em branco p/ manter atual' : 'Ex: Lm@2026!'}
+                    className="w-full pl-4 pr-20 py-3 rounded-2xl bg-black/40 border border-white/15 focus:border-indigo-500 text-white font-mono text-xs outline-none transition"
                   />
-                  <KeyRound className="w-4 h-4 text-amber-400 absolute right-3.5 top-3.5 pointer-events-none" />
+                  <div className="absolute inset-y-0 right-0 pr-2.5 flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="p-1 text-slate-400 hover:text-white transition"
+                      title={showPassword ? 'Ocultar senha' : 'Ver senha'}
+                    >
+                      {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                    {password && (
+                      <button
+                        type="button"
+                        onClick={handleCopyAccess}
+                        className="p-1 text-emerald-400 hover:text-emerald-300 transition"
+                        title="Copiar credenciais do prescritor"
+                      >
+                        {copiedPassword ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    )}
+                  </div>
                 </div>
+                {formErrors.password ? (
+                  <p className="text-[10px] text-rose-400 mt-1 flex items-center gap-1 font-semibold">
+                    <AlertCircle className="w-3 h-3 text-rose-400 shrink-0" />
+                    <span>{formErrors.password}</span>
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3 text-emerald-400 shrink-0" />
+                    <span>{prescriberToEdit ? 'Altere a senha aqui se desejar atualizar o login do profissional.' : 'O Administrador deve criar a senha de acesso deste profissional.'}</span>
+                  </p>
+                )}
               </div>
             </div>
 
@@ -543,10 +634,10 @@ export const PrescriberModal: React.FC<PrescriberModalProps> = ({
               </div>
 
               {/* Toggle: Prescritor Master */}
-              <div className="flex items-start justify-between gap-4 p-3 rounded-xl bg-black/30 border border-white/10">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Crown className="w-4 h-4 text-amber-400" />
+              <div className="flex items-center justify-between gap-4 p-3.5 rounded-2xl bg-black/30 border border-white/10 transition-colors">
+                <div className="space-y-1 min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Crown className="w-4 h-4 text-amber-400 shrink-0" />
                     <span className="text-xs font-bold text-white">Definir como Prescritor Master</span>
                     {isMaster && (
                       <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
@@ -569,31 +660,36 @@ export const PrescriberModal: React.FC<PrescriberModalProps> = ({
                     soundFx.playClick();
                     setIsMaster(!isMaster);
                   }}
-                  className={`w-12 h-6 rounded-full transition relative p-0.5 border ${
-                    isMaster ? 'bg-amber-600 border-amber-400' : 'bg-white/10 border-white/20'
+                  className={`w-12 h-7 rounded-full transition-colors duration-200 relative p-0.5 border shrink-0 flex items-center cursor-pointer shadow-inner ${
+                    isMaster ? 'bg-amber-600 border-amber-400' : 'bg-white/10 border-white/20 hover:bg-white/15'
                   }`}
+                  title={isMaster ? 'Desativar Prescritor Master' : 'Ativar Prescritor Master'}
                 >
                   <motion.div
-                    animate={{ x: isMaster ? 24 : 0 }}
+                    animate={{ x: isMaster ? 20 : 0 }}
                     transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                    className="w-5 h-5 rounded-full bg-white shadow-md flex items-center justify-center text-amber-700"
+                    className="w-5 h-5 rounded-full bg-white shadow-md flex items-center justify-center shrink-0"
                   >
-                    {isMaster && <Check className="w-3 h-3 stroke-[3]" />}
+                    {isMaster ? (
+                      <Check className="w-3 h-3 text-amber-700 stroke-[3] shrink-0" />
+                    ) : (
+                      <div className="w-1.5 h-1.5 rounded-full bg-slate-400/60" />
+                    )}
                   </motion.div>
                 </button>
               </div>
 
               {/* Toggle: Administrador Geral (Apenas disponível se o criador for Administrador) */}
               <div
-                className={`flex items-start justify-between gap-4 p-3 rounded-xl border ${
+                className={`flex items-center justify-between gap-4 p-3.5 rounded-2xl border transition-colors ${
                   isCurrentUserAdmin
                     ? 'bg-violet-950/30 border-violet-500/30'
                     : 'bg-black/20 border-white/5 opacity-60'
                 }`}
               >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <ShieldAlert className="w-4 h-4 text-violet-400" />
+                <div className="space-y-1 min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <ShieldAlert className="w-4 h-4 text-violet-400 shrink-0" />
                     <span className="text-xs font-bold text-white">Perfil Administrador Geral</span>
                     {isAdmin && (
                       <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/40">
@@ -620,20 +716,27 @@ export const PrescriberModal: React.FC<PrescriberModalProps> = ({
                         setRoleType('Administrador Geral');
                       }
                     }}
-                    className={`w-12 h-6 rounded-full transition relative p-0.5 border ${
-                      isAdmin ? 'bg-violet-600 border-violet-400' : 'bg-white/10 border-white/20'
+                    className={`w-12 h-7 rounded-full transition-colors duration-200 relative p-0.5 border shrink-0 flex items-center cursor-pointer shadow-inner ${
+                      isAdmin ? 'bg-violet-600 border-violet-400' : 'bg-white/10 border-white/20 hover:bg-white/15'
                     }`}
+                    title={isAdmin ? 'Desativar Administrador Geral' : 'Ativar Administrador Geral'}
                   >
                     <motion.div
-                      animate={{ x: isAdmin ? 24 : 0 }}
+                      animate={{ x: isAdmin ? 20 : 0 }}
                       transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                      className="w-5 h-5 rounded-full bg-white shadow-md flex items-center justify-center text-violet-800"
+                      className="w-5 h-5 rounded-full bg-white shadow-md flex items-center justify-center shrink-0"
                     >
-                      {isAdmin && <Check className="w-3 h-3 stroke-[3]" />}
+                      {isAdmin ? (
+                        <Check className="w-3 h-3 text-violet-800 stroke-[3] shrink-0" />
+                      ) : (
+                        <div className="w-1.5 h-1.5 rounded-full bg-slate-400/60" />
+                      )}
                     </motion.div>
                   </button>
                 ) : (
-                  <Lock className="w-4 h-4 text-slate-500 mt-1" />
+                  <div className="p-2 rounded-xl bg-white/5 border border-white/10 shrink-0">
+                    <Lock className="w-4 h-4 text-slate-500 shrink-0" />
+                  </div>
                 )}
               </div>
             </div>

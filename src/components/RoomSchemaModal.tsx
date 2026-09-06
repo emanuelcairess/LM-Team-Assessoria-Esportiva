@@ -33,7 +33,7 @@ import {
 import { ROOM_ENTITIES_DATA, RoomEntityMetadata } from '../models/roomSchema';
 import { CloudSyncStatus, PendingSyncItem } from '../types';
 import { soundFx } from '../utils/audio';
-import { syncService, SyncLogEntry } from '../services/syncService';
+import { syncService, SyncLogEntry, resolveFirestorePathForDomain } from '../services/syncService';
 
 interface RoomSchemaModalProps {
   isOpen: boolean;
@@ -605,9 +605,21 @@ export const RoomSchemaModal: React.FC<RoomSchemaModalProps> = ({
             {/* Sync Queue Table / Cards */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                  Mutações Pendentes na Fila ({syncStatus?.pendingCount || 0})
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                    Mutações Pendentes na Fila ({syncStatus?.pendingCount || 0})
+                  </span>
+                  {typeof syncStatus?.syncedCount === 'number' && syncStatus.syncedCount > 0 && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      ✓ {syncStatus.syncedCount} Sincronizados
+                    </span>
+                  )}
+                  {typeof syncStatus?.errorCount === 'number' && syncStatus.errorCount > 0 && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                      ⚠ {syncStatus.errorCount} com Erro / Retry
+                    </span>
+                  )}
+                </div>
                 {syncStatus && syncStatus.checkInSyncQueue.length > 0 && (
                   <button
                     onClick={() => {
@@ -625,24 +637,40 @@ export const RoomSchemaModal: React.FC<RoomSchemaModalProps> = ({
               {syncStatus && syncStatus.checkInSyncQueue.length > 0 ? (
                 <div className="space-y-2.5">
                   {syncStatus.checkInSyncQueue.map((item) => {
-                    let firestoreCollection = `athletes/ath_01/checkins`;
-                    if (item.domain === 'checkin_exercise_set') {
-                      firestoreCollection = `athletes/ath_01/exercise_set_checkins`;
-                    } else if (item.domain === 'checkin_meal') {
-                      firestoreCollection = `athletes/ath_01/meal_checkins`;
-                    } else if (item.domain === 'checkin_supplement') {
-                      firestoreCollection = `athletes/ath_01/supplement_checkins`;
-                    } else if (item.domain === 'checkin_anthropometric') {
-                      firestoreCollection = `athletes/ath_01/anthropometric_evaluations`;
+                    let parsedPayload: Record<string, any> = {};
+                    try {
+                      parsedPayload = JSON.parse(item.payloadJson);
+                    } catch {
+                      parsedPayload = {};
                     }
+
+                    const pathRes = resolveFirestorePathForDomain(
+                      item.domain,
+                      item.entityId,
+                      parsedPayload.athleteId || 'ath_01',
+                      parsedPayload
+                    );
+
+                    const hasError = (item.retryCount || 0) > 0 || !!item.lastError;
+                    const isWaitingBackoff = item.nextRetryAt && Date.now() < item.nextRetryAt;
 
                     return (
                       <div
                         key={item.id}
-                        className="p-4 rounded-2xl bg-white/5 border border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs"
+                        className={`p-4 rounded-2xl border flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs transition ${
+                          hasError
+                            ? 'bg-rose-950/20 border-rose-500/30'
+                            : 'bg-white/5 border-white/10'
+                        }`}
                       >
                         <div className="flex items-start gap-3">
-                          <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center font-mono font-bold text-[10px] shrink-0 mt-0.5">
+                          <div
+                            className={`w-8 h-8 rounded-xl flex items-center justify-center font-mono font-bold text-[10px] shrink-0 mt-0.5 ${
+                              item.operation === 'DELETE'
+                                ? 'bg-rose-500/20 text-rose-300'
+                                : 'bg-amber-500/20 text-amber-300'
+                            }`}
+                          >
                             {item.operation}
                           </div>
                           <div className="space-y-1">
@@ -652,20 +680,42 @@ export const RoomSchemaModal: React.FC<RoomSchemaModalProps> = ({
                                 doc: {item.entityId}
                               </span>
                               <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                                ➔ Firestore: /{firestoreCollection}/{item.entityId}
+                                ➔ Firestore: /{pathRes.fullPath || `${item.domain}/${item.entityId}`}
                               </span>
+                              {(item.retryCount || 0) > 0 && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                  Tentativas: {item.retryCount}
+                                </span>
+                              )}
                             </div>
                             <p className="text-[11px] text-slate-400 font-mono break-all line-clamp-2">
                               payload: {item.payloadJson}
                             </p>
+                            {item.lastError && (
+                              <p className="text-[11px] text-rose-400 font-mono flex items-center gap-1 mt-1">
+                                <AlertCircle className="w-3 h-3 shrink-0" />
+                                <span>Último erro: {item.lastError}</span>
+                              </p>
+                            )}
                           </div>
                         </div>
 
                         <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
-                          <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                            <span>AGUARDANDO CONEXÃO</span>
-                          </span>
+                          {hasError ? (
+                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse" />
+                              <span>
+                                {isWaitingBackoff
+                                  ? `BACKOFF (${Math.max(1, Math.round(((item.nextRetryAt || 0) - Date.now()) / 1000))}s)`
+                                  : 'RETRY AGENDADO'}
+                              </span>
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                              <span>AGUARDANDO CONEXÃO</span>
+                            </span>
+                          )}
                         </div>
                       </div>
                     );

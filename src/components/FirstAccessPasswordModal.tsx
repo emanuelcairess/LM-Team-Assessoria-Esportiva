@@ -66,12 +66,6 @@ export const FirstAccessPasswordModal: React.FC<FirstAccessPasswordModalProps> =
       return;
     }
 
-    if (newPassword.toLowerCase() === 'lmteam') {
-      soundFx.playAlert();
-      setErrorMessage('A nova senha não pode ser a senha temporária inicial ("lmteam"). Defina uma senha exclusiva.');
-      return;
-    }
-
     if (newPassword !== confirmPassword) {
       soundFx.playAlert();
       setErrorMessage('A confirmação de senha não coincide com a nova senha digitada.');

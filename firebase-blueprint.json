@@ -1,98 +1,320 @@
 {
   "entities": {
-    "athlete": {
-      "title": "Athlete Profile",
-      "description": "Athlete registration with contact, passwords, and biometric metrics",
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile with role-based access control and athlete/prescriber association",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "phone": { "type": "string" },
-        "cpf": { "type": "string" },
-        "birthDate": { "type": "string" },
-        "status": { "type": "string" },
-        "email": { "type": "string" },
-        "category": { "type": "string" },
-        "currentWeightKg": { "type": "number" },
-        "coachName": { "type": "string" },
-        "accessPassword": { "type": "string" },
-        "passwordChangedAt": { "type": "string" }
+        "id": {
+          "type": "string",
+          "description": "Firebase Auth UID matching the document ID"
+        },
+        "email": {
+          "type": "string",
+          "description": "User account email"
+        },
+        "name": {
+          "type": "string",
+          "description": "Full name of the user"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["athlete", "coach", "nutritionist", "doctor", "admin"],
+          "description": "Role determining access privileges"
+        },
+        "athleteId": {
+          "type": "string",
+          "description": "Associated athlete document ID if role is athlete"
+        },
+        "prescriberId": {
+          "type": "string",
+          "description": "Associated prescriber ID if role is professional"
+        },
+        "assignedAthleteIds": {
+          "type": "array",
+          "description": "List of athlete IDs that this professional is explicitly allowed to manage"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Ativo", "Inativo", "Pendente"],
+          "description": "Account activation status"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp of registration"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last update"
+        }
       },
-      "required": ["id", "name"]
+      "required": ["id", "email", "name", "role", "status"]
     },
-    "prescriber": {
-      "title": "Prescriber Profile",
-      "description": "Clinical and coaching team profile with role permissions and access password",
+    "Athlete": {
+      "title": "Athlete",
+      "description": "Athlete profile including health goals, physical statistics and assigned professionals",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "roleType": { "type": "string" },
-        "phone": { "type": "string" },
-        "birthDate": { "type": "string" },
-        "email": { "type": "string" },
-        "accessPassword": { "type": "string" },
-        "isMaster": { "type": "boolean" },
-        "isAdmin": { "type": "boolean" },
-        "status": { "type": "string" },
-        "requiresPasswordChange": { "type": "boolean" },
-        "passwordChangedAt": { "type": "string" }
+        "id": {
+          "type": "string",
+          "description": "Unique athlete identifier"
+        },
+        "name": {
+          "type": "string",
+          "description": "Athlete full name"
+        },
+        "email": {
+          "type": "string",
+          "description": "Contact email"
+        },
+        "phone": {
+          "type": "string",
+          "description": "Contact phone"
+        },
+        "coachId": {
+          "type": "string",
+          "description": "Assigned coach user ID"
+        },
+        "nutritionistId": {
+          "type": "string",
+          "description": "Assigned nutritionist user ID"
+        },
+        "doctorId": {
+          "type": "string",
+          "description": "Assigned sports doctor user ID"
+        },
+        "currentWeightKg": {
+          "type": "number",
+          "description": "Current body weight in kg"
+        },
+        "targetWeightKg": {
+          "type": "number",
+          "description": "Target weight goal in kg"
+        },
+        "heightCm": {
+          "type": "number",
+          "description": "Height in centimeters"
+        },
+        "status": {
+          "type": "string",
+          "description": "Athlete status"
+        }
       },
-      "required": ["id", "name", "phone"]
+      "required": ["id", "name", "email", "status"]
     },
-    "checkin": {
-      "title": "Check-in Record",
-      "description": "Daily check-in for exercise sets, nutrition, and supplements",
+    "Prescriber": {
+      "title": "Prescriber",
+      "description": "Health and sports coaching professional profile",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "athleteId": { "type": "string" },
-        "domain": { "type": "string" },
-        "payload": { "type": "object" },
-        "syncedAt": { "type": "number" }
+        "id": {
+          "type": "string",
+          "description": "Unique prescriber identifier"
+        },
+        "name": {
+          "type": "string",
+          "description": "Full name"
+        },
+        "roleType": {
+          "type": "string",
+          "description": "Professional specialty"
+        },
+        "email": {
+          "type": "string",
+          "description": "Contact email"
+        },
+        "isMaster": {
+          "type": "boolean",
+          "description": "Whether prescriber has master privileges"
+        },
+        "isAdmin": {
+          "type": "boolean",
+          "description": "Administrative profile flag"
+        },
+        "status": {
+          "type": "string",
+          "description": "Active status"
+        }
       },
-      "required": ["id", "athleteId", "domain"]
+      "required": ["id", "name", "roleType", "email", "status"]
     },
-    "exercise": {
-      "title": "Exercise Library Item",
-      "description": "Cataloged exercise with muscle group, technical notes, cadence, and default prescription metrics",
+    "ExerciseCheckin": {
+      "title": "ExerciseCheckin",
+      "description": "Logged set or workout execution by the athlete",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "targetMuscle": { "type": "string" },
-        "subMuscle": { "type": "string" },
-        "equipment": { "type": "string" },
-        "defaultRestSeconds": { "type": "number" },
-        "defaultSetsCount": { "type": "number" },
-        "defaultRepsTarget": { "type": "string" },
-        "defaultTechnique": { "type": "string" },
-        "cadence": { "type": "string" },
-        "technicalNotes": { "type": "string" },
-        "videoDemoUrl": { "type": "string" },
-        "isCustom": { "type": "boolean" },
-        "usageCount": { "type": "number" },
-        "createdAt": { "type": "string" }
+        "id": {
+          "type": "string",
+          "description": "Checkin record ID"
+        },
+        "athleteId": {
+          "type": "string",
+          "description": "Athlete identifier"
+        },
+        "exerciseId": {
+          "type": "string",
+          "description": "Exercise identifier"
+        },
+        "weightKgLogged": {
+          "type": "number",
+          "description": "Weight lifted in kg"
+        },
+        "repsTarget": {
+          "type": "string",
+          "description": "Reps performed"
+        },
+        "isCompleted": {
+          "type": "boolean",
+          "description": "Completion flag"
+        }
       },
-      "required": ["id", "name", "targetMuscle"]
+      "required": ["id", "athleteId", "isCompleted"]
+    },
+    "LibraryExercise": {
+      "title": "LibraryExercise",
+      "description": "Exercise bank item available for prescription",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Exercise ID"
+        },
+        "name": {
+          "type": "string",
+          "description": "Exercise name"
+        },
+        "targetMuscle": {
+          "type": "string",
+          "description": "Target muscle group"
+        },
+        "defaultRestSeconds": {
+          "type": "number",
+          "description": "Default rest time in seconds"
+        }
+      },
+      "required": ["id", "name", "targetMuscle", "defaultRestSeconds"]
+    },
+    "Prescription": {
+      "title": "Prescription",
+      "description": "Official workout, nutrition, or supplementation prescription",
+      "type": "object",
+      "properties": {
+        "athleteId": {
+          "type": "string",
+          "description": "Athlete ID for whom prescription is assigned"
+        },
+        "prescribedBy": {
+          "type": "string",
+          "description": "Professional user ID who prescribed"
+        },
+        "version": {
+          "type": "number",
+          "description": "Prescription version counter"
+        }
+      },
+      "required": ["athleteId"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable security and administrative audit log entry",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique audit log identifier"
+        },
+        "actorUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the actor performing the action"
+        },
+        "actorEmail": {
+          "type": "string",
+          "description": "Email of the actor"
+        },
+        "action": {
+          "type": "string",
+          "description": "Action performed (e.g., CREATE_PRESCRIBER, PROMOTE_ADMIN, UPDATE_ATHLETE_ASSIGNMENTS, DELETE_RECORD)"
+        },
+        "resource": {
+          "type": "string",
+          "description": "Target resource type (e.g., prescriber, athlete, user)"
+        },
+        "resourceId": {
+          "type": "string",
+          "description": "Target resource document ID"
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "ISO timestamp of the audited operation"
+        },
+        "details": {
+          "type": "string",
+          "description": "Human-readable description of the operation"
+        },
+        "changes": {
+          "type": "object",
+          "description": "Diff of altered fields"
+        }
+      },
+      "required": ["id", "actorUid", "action", "resource", "resourceId", "timestamp"]
     }
   },
   "firestore": {
-    "/exercises/{exerciseId}": {
-      "schema": "exercise",
-      "description": "Exercise bank library items accessible across all coaches and athlete workout prescriptions"
+    "/audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Immutable security audit logs for administrative operations"
     },
-    "/prescribers/{prescriberId}": {
-      "schema": "prescriber",
-      "description": "Prescriber document for coaches, doctors, nutritionists, and administrators"
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile with role metadata (athlete, coach, nutritionist, doctor, admin)"
     },
     "/athletes/{athleteId}": {
-      "schema": "athlete",
-      "description": "Individual athlete document"
+      "schema": "Athlete",
+      "description": "Athlete clinical and sports data"
     },
     "/athletes/{athleteId}/checkins/{checkinId}": {
-      "schema": "checkin",
-      "description": "Real-time athlete sync check-ins"
+      "schema": "ExerciseCheckin",
+      "description": "Daily athlete checkins and execution records"
+    },
+    "/athletes/{athleteId}/exercise_set_checkins/{checkinId}": {
+      "schema": "ExerciseCheckin",
+      "description": "Exercise set specific execution checkins"
+    },
+    "/athletes/{athleteId}/meal_checkins/{checkinId}": {
+      "schema": "ExerciseCheckin",
+      "description": "Diet and meal adherence logs"
+    },
+    "/athletes/{athleteId}/supplement_checkins/{checkinId}": {
+      "schema": "ExerciseCheckin",
+      "description": "Supplementation adherence checkins"
+    },
+    "/athletes/{athleteId}/anthropometric_evaluations/{evalId}": {
+      "schema": "Athlete",
+      "description": "Physical evaluations, measurements and progress photos"
+    },
+    "/prescriptions/{type}/athletes/{athleteId}": {
+      "schema": "Prescription",
+      "description": "Prescriptions for workout, nutrition, and supplements"
+    },
+    "/prescribers/{prescriberId}": {
+      "schema": "Prescriber",
+      "description": "Professional coaching staff directory"
+    },
+    "/exercises/{exerciseId}": {
+      "schema": "LibraryExercise",
+      "description": "Exercise Bank catalog for prescriptions"
+    },
+    "/workout_templates/{templateId}": {
+      "schema": "Prescription",
+      "description": "Official reusable workout templates"
+    },
+    "/formula_templates/{templateId}": {
+      "schema": "Prescription",
+      "description": "Official supplement formula templates"
+    },
+    "/admins/{adminId}": {
+      "schema": "UserProfile",
+      "description": "System administrators registry"
     }
   }
 }

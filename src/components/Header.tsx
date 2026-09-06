@@ -25,6 +25,7 @@ import {
   MoreHorizontal,
   Search,
   Keyboard,
+  KeyRound,
   X
 } from 'lucide-react';
 import { AthleteProfile, UserRole, ModuleType, CloudSyncStatus } from '../types';
@@ -51,6 +52,7 @@ interface HeaderProps {
   onTriggerSync?: () => void;
   onToggleOnlineMode?: () => void;
   onLogout?: () => void;
+  onOpenChangePassword?: () => void;
   theme?: 'dark' | 'light';
   onToggleTheme?: () => void;
 }
@@ -118,6 +120,7 @@ export const Header: React.FC<HeaderProps> = ({
   onTriggerSync,
   onToggleOnlineMode,
   onLogout,
+  onOpenChangePassword,
   theme = 'dark',
   onToggleTheme
 }) => {
@@ -181,7 +184,7 @@ export const Header: React.FC<HeaderProps> = ({
                 soundFx.playClick();
                 onToggleTheme();
               }}
-              className={`p-2 rounded-2xl border transition shadow-sm ${
+              className={`w-9 h-9 rounded-2xl border transition shadow-sm flex items-center justify-center shrink-0 ${
                 theme === 'light'
                   ? 'bg-amber-500/15 text-amber-500 border-amber-500/30 hover:bg-amber-500/25'
                   : 'bg-white/10 text-cyan-300 border-white/15 hover:bg-white/15 hover:text-cyan-200'
@@ -189,9 +192,9 @@ export const Header: React.FC<HeaderProps> = ({
               title={theme === 'light' ? 'Mudar para Modo Noite (Dark)' : 'Mudar para Modo Dia (Light)'}
             >
               {theme === 'light' ? (
-                <Sun className="w-4 h-4 text-amber-500 animate-in spin-in-90 duration-300" />
+                <Sun className="w-4 h-4 text-amber-500 animate-in spin-in-90 duration-300 shrink-0" />
               ) : (
-                <Moon className="w-4 h-4 text-cyan-300 animate-in spin-in-90 duration-300" />
+                <Moon className="w-4 h-4 text-cyan-300 animate-in spin-in-90 duration-300 shrink-0" />
               )}
             </button>
           )}
@@ -398,8 +401,24 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
                 )}
 
+                {onOpenChangePassword && (
+                  <div className="pt-2 border-t border-white/10">
+                    <button
+                      onClick={() => {
+                        soundFx.playClick();
+                        setShowAthleteDropdown(false);
+                        onOpenChangePassword();
+                      }}
+                      className="w-full flex items-center justify-center gap-2 p-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20 text-xs font-bold transition mb-1"
+                    >
+                      <KeyRound className="w-3.5 h-3.5" />
+                      <span>Alterar Minha Senha</span>
+                    </button>
+                  </div>
+                )}
+
                 {onLogout && (
-                  <div className="pt-2 mt-1 border-t border-white/10">
+                  <div className={`pt-2 ${onOpenChangePassword ? '' : 'mt-1 border-t border-white/10'}`}>
                     <button
                       onClick={() => {
                         soundFx.playClick();
@@ -514,6 +533,20 @@ export const Header: React.FC<HeaderProps> = ({
                         {syncStatus.pendingCount}
                       </span>
                     )}
+                  </button>
+                )}
+
+                {onOpenChangePassword && (
+                  <button
+                    onClick={() => {
+                      soundFx.playClick();
+                      setShowQuickMenu(false);
+                      onOpenChangePassword();
+                    }}
+                    className="w-full flex items-center gap-2.5 p-2 rounded-xl text-left text-xs font-semibold text-amber-300 hover:bg-white/5 transition"
+                  >
+                    <KeyRound className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>Alterar Minha Senha</span>
                   </button>
                 )}
 

@@ -1,4 +1,43 @@
-export type UserRole = 'athlete' | 'coach' | 'admin';
+export type UserRole = 'athlete' | 'coach' | 'nutritionist' | 'doctor' | 'admin';
+
+export interface UserProfile {
+  id: string; // Firebase Auth UID
+  email: string;
+  name: string;
+  role: UserRole;
+  athleteId?: string;
+  prescriberId?: string;
+  assignedAthleteIds?: string[];
+  status: 'Ativo' | 'Inativo' | 'Pendente';
+  isAdmin?: boolean;
+  isMaster?: boolean;
+  avatar?: string;
+  phone?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AuditLog {
+  id: string;
+  actorUid: string;
+  actorEmail?: string;
+  action:
+    | 'CREATE_PRESCRIBER'
+    | 'PROMOTE_ADMIN'
+    | 'UPDATE_ATHLETE_ASSIGNMENTS'
+    | 'UPDATE_ATHLETE_PASSWORD'
+    | 'UPDATE_PRESCRIBER_PASSWORD'
+    | 'CHANGE_SELF_PASSWORD'
+    | 'DELETE_RECORD'
+    | 'TOGGLE_STATUS'
+    | 'UPDATE_USER_ROLE';
+  resource: 'prescriber' | 'athlete' | 'user' | 'prescription';
+  resourceId: string;
+  timestamp: string; // ISO String
+  details?: string;
+  changes?: Record<string, { before?: any; after?: any } | any>;
+  ip?: string;
+}
 
 export type PrescriberRoleType =
   | 'Head Coach'
@@ -17,7 +56,8 @@ export interface PrescriberProfile {
   phone: string; // Telefone: (99) 99999-9999
   birthDate: string; // Data de nascimento: YYYY-MM-DD
   email: string;
-  accessPassword?: string;
+  password?: string; // Senha de acesso ao sistema
+  firebaseUid?: string;
   avatar?: string;
   isMaster: boolean; // Prescritor Master (pode cadastrar outros prescritores)
   isAdmin?: boolean; // Perfil Administrador Geral
@@ -25,8 +65,6 @@ export interface PrescriberProfile {
   crm_crn_cref?: string; // Registro de conselho profissional
   bio?: string;
   createdAt?: string;
-  requiresPasswordChange?: boolean; // Se deve forçar alteração de senha no primeiro login
-  passwordChangedAt?: string; // Data da última alteração de senha
   createdBy?: {
     id: string;
     name: string;
@@ -74,10 +112,11 @@ export interface AthleteProfile {
   name: string;
   avatar: string;
   email: string;
+  firebaseUid?: string;
   phone?: string; // Formato: (99) 99999-9999
   cpf?: string; // Formato: 999.999.999-99
   birthDate?: string; // Formato: YYYY-MM-DD
-  accessPassword?: string; // Senha cadastrada pelo usuário prescritor
+  password?: string; // Senha de acesso gerada pelo prescritor
   age: number;
   category: string; // e.g. "Avançado / Classic Physique"
   coachName: string;
@@ -343,7 +382,10 @@ export interface PendingSyncItem {
   payloadJson: string;
   createdAt: number;
   retryCount: number;
+  lastError?: string;
   lastErrorMessage?: string;
+  nextRetryAt?: number;
+  syncedAt?: number;
 }
 
 export interface CloudSyncStatus {
@@ -351,6 +393,15 @@ export interface CloudSyncStatus {
   isSyncing: boolean;
   lastSyncedAt: string | null;
   pendingCount: number;
+  syncedCount?: number;
+  errorCount?: number;
+  lastSyncResult?: {
+    success: boolean;
+    syncedCount: number;
+    failedCount: number;
+    totalAttempted: number;
+    timestamp: number;
+  };
   cloudProvider: 'Supabase' | 'Firestore';
   prescriptionVersion: number;
   checkInSyncQueue: PendingSyncItem[];

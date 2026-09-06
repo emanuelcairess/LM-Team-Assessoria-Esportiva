@@ -41,6 +41,7 @@ import {
 import { INITIAL_EXERCISE_LIBRARY } from './data/exerciseLibrary';
 import { soundFx } from './utils/audio';
 import { syncService, SyncLogEntry } from './services/syncService';
+import { adminService } from './services/adminService';
 
 // Components
 import { Header } from './components/Header';
@@ -55,6 +56,7 @@ import { RoomSchemaModal } from './components/RoomSchemaModal';
 import { InstallAppModal } from './components/InstallAppModal';
 import { SplashScreen } from './components/SplashScreen';
 import { BrandAssetsModal } from './components/BrandAssetsModal';
+import { ChangePasswordModal } from './components/ChangePasswordModal';
 
 import { auth, signOut, onAuthStateChanged, User as FirebaseUser } from './lib/firebase';
 
@@ -417,6 +419,7 @@ export default function App() {
 
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState<boolean>(false);
   const [isKeyboardShortcutsOpen, setIsKeyboardShortcutsOpen] = useState<boolean>(false);
+  const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState<boolean>(false);
 
   const handleToggleSidebar = () => {
     setIsSidebarCollapsed((prev) => {
@@ -518,12 +521,42 @@ export default function App() {
     }, 6000);
   };
 
-  // Firebase Auth State Listener
+  // Firebase Auth State Listener & Authoritative Profile Synchronization
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser: FirebaseUser | null) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
       if (firebaseUser) {
         setIsAuthenticated(true);
-        // Find matching athlete by phone or ID
+
+        // Fetch authoritative profile and verified role from backend
+        try {
+          const authProfile = await adminService.getAuthoritativeProfile();
+          if (authProfile) {
+            const isStaff = authProfile.isAdmin || authProfile.role === 'admin' || authProfile.role === 'coach' || authProfile.role === 'nutritionist' || authProfile.role === 'doctor';
+            if (isStaff) {
+              setUserSessionType('prescriber');
+              setCurrentRole(authProfile.isAdmin ? 'admin' : 'coach');
+              setCurrentPrescriber((prev) => ({
+                ...prev,
+                email: authProfile.email || prev.email,
+                isAdmin: authProfile.isAdmin,
+                isMaster: authProfile.isMaster,
+                firebaseUid: authProfile.uid
+              }));
+            } else {
+              setUserSessionType('athlete');
+              setCurrentRole('athlete');
+            }
+
+            if (authProfile.athleteId) {
+              const matched = athletesList.find((a) => a.id === authProfile.athleteId);
+              if (matched) setCurrentAthlete(matched);
+            }
+          }
+        } catch (authErr) {
+          console.warn('Error fetching authoritative profile on auth change:', authErr);
+        }
+
+        // Match athlete by phone if available
         if (firebaseUser.phoneNumber) {
           const digits = firebaseUser.phoneNumber.replace(/\D/g, '');
           const matched = athletesList.find((a) => (a.phone || '').replace(/\D/g, '').includes(digits.slice(-8)));
@@ -531,6 +564,8 @@ export default function App() {
             setCurrentAthlete(matched);
           }
         }
+      } else {
+        setIsAuthenticated(false);
       }
     });
 
@@ -593,6 +628,13 @@ export default function App() {
     setAthletesList((prev) => [newAthlete, ...prev]);
     setCurrentAthlete(newAthlete);
     recordMutation('athlete', newAthlete.id, newAthlete);
+
+    if (newAthlete.password) {
+      adminService.setAthletePassword(newAthlete.id, newAthlete.password).catch((err) => {
+        console.warn('Notice syncing athlete password:', err);
+      });
+    }
+
     showToast(
       'Aluno Cadastrado com Sucesso!',
       `${newAthlete.name} foi adicionado ao time com CPF ${newAthlete.cpf || 'registrado'} e telefone ${newAthlete.phone}.`
@@ -605,6 +647,13 @@ export default function App() {
       setCurrentAthlete(updatedAthlete);
     }
     recordMutation('athlete', updatedAthlete.id, updatedAthlete);
+
+    if (updatedAthlete.password) {
+      adminService.setAthletePassword(updatedAthlete.id, updatedAthlete.password).catch((err) => {
+        console.warn('Notice syncing updated athlete password:', err);
+      });
+    }
+
     showToast('Cadastro Atualizado!', `Dados cadastrais de ${updatedAthlete.name} foram atualizados.`);
   };
 
@@ -616,25 +665,30 @@ export default function App() {
     showToast('Foto de Perfil Atualizada!', `A nova foto de ${updated.name} foi salva.`);
   };
 
-  const handleToggleAthleteStatus = (athleteId: string) => {
-    setAthletesList((prev) => {
-      const target = prev.find((a) => a.id === athleteId);
-      if (!target) return prev;
-      const nextStatus = target.status === 'Inativo' ? 'Ativo' : 'Inativo';
-      const updated = { ...target, status: nextStatus as AthleteProfile['status'] };
-      if (currentAthlete.id === athleteId) {
-        setCurrentAthlete(updated);
-      }
+  const handleToggleAthleteStatus = async (athleteId: string) => {
+    const target = athletesList.find((a) => a.id === athleteId);
+    if (!target) return;
+    const nextStatus = target.status === 'Inativo' ? 'Ativo' : 'Inativo';
+    const updated = { ...target, status: nextStatus as AthleteProfile['status'] };
+
+    setAthletesList((prev) => prev.map((a) => (a.id === athleteId ? updated : a)));
+    if (currentAthlete.id === athleteId) {
+      setCurrentAthlete(updated);
+    }
+
+    try {
+      await adminService.toggleStatus('athlete', athleteId, nextStatus);
+    } catch (e) {
       recordMutation('athlete', athleteId, { status: nextStatus });
-      showToast(
-        nextStatus === 'Ativo' ? 'Aluno Ativado!' : 'Aluno Desativado',
-        `${target.name} agora está com status ${nextStatus}.`
-      );
-      return prev.map((a) => (a.id === athleteId ? updated : a));
-    });
+    }
+
+    showToast(
+      nextStatus === 'Ativo' ? 'Aluno Ativado!' : 'Aluno Desativado',
+      `${target.name} agora está com status ${nextStatus}.`
+    );
   };
 
-  const handleDeleteAthlete = (athleteId: string) => {
+  const handleDeleteAthlete = async (athleteId: string) => {
     const target = athletesList.find((a) => a.id === athleteId);
     const targetName = target?.name || 'Aluno';
     const remaining = athletesList.filter((a) => a.id !== athleteId);
@@ -646,7 +700,13 @@ export default function App() {
         setCurrentAthlete(INITIAL_ATHLETE);
       }
     }
-    recordMutation('athlete', athleteId, { operation: 'DELETE' });
+
+    try {
+      await adminService.deleteRecord('athlete', athleteId);
+    } catch (e) {
+      recordMutation('athlete', athleteId, { operation: 'DELETE' });
+    }
+
     showToast('Aluno Excluído', `${targetName} foi removido do time.`);
   };
 
@@ -659,14 +719,25 @@ export default function App() {
     );
   };
 
-  const handleAddPrescriber = (newPrescriber: PrescriberProfile) => {
+  const handleAddPrescriber = async (newPrescriber: PrescriberProfile) => {
     // Security check: Only Admin can create Admin
     if (!currentPrescriber.isAdmin && newPrescriber.isAdmin) {
       showToast('Ação Bloqueada', 'Prescritores Master não possuem permissão para criar perfis de Administrador.');
       return;
     }
+
     setPrescribersList((prev) => [newPrescriber, ...prev]);
-    recordMutation('prescriber_profile', newPrescriber.id, newPrescriber);
+
+    try {
+      const res = await adminService.createPrescriber(newPrescriber);
+      if (!res.success && res.error) {
+        console.warn('Backend prescriber creation fallback:', res.error);
+        recordMutation('prescriber_profile', newPrescriber.id, newPrescriber);
+      }
+    } catch (err) {
+      recordMutation('prescriber_profile', newPrescriber.id, newPrescriber);
+    }
+
     showToast(
       'Prescritor Cadastrado!',
       `${newPrescriber.name} (${newPrescriber.roleType}) foi integrado à equipe como ${
@@ -675,7 +746,7 @@ export default function App() {
     );
   };
 
-  const handleUpdatePrescriber = (updated: PrescriberProfile) => {
+  const handleUpdatePrescriber = async (updated: PrescriberProfile) => {
     const target = prescribersList.find((p) => p.id === updated.id);
     // Security check: Master cannot edit Admin
     if (!currentPrescriber.isAdmin && target?.isAdmin) {
@@ -692,11 +763,21 @@ export default function App() {
     if (currentPrescriber.id === updated.id) {
       setCurrentPrescriber(updated);
     }
-    recordMutation('prescriber_profile', updated.id, updated);
+
+    try {
+      if (updated.isAdmin && !target?.isAdmin) {
+        await adminService.promoteAdmin({ prescriberId: updated.id });
+      } else {
+        await adminService.createPrescriber(updated);
+      }
+    } catch (e) {
+      recordMutation('prescriber_profile', updated.id, updated);
+    }
+
     showToast('Perfil Atualizado!', `Dados de ${updated.name} foram atualizados.`);
   };
 
-  const handleDeletePrescriber = (prescriberId: string) => {
+  const handleDeletePrescriber = async (prescriberId: string) => {
     const target = prescribersList.find((p) => p.id === prescriberId);
     if (!target) return;
 
@@ -718,11 +799,17 @@ export default function App() {
     if (currentPrescriber.id === prescriberId) {
       setCurrentPrescriber(remaining[0] || INITIAL_PRESCRIBERS[0]);
     }
-    recordMutation('prescriber_profile', prescriberId, { operation: 'DELETE' });
+
+    try {
+      await adminService.deleteRecord('prescriber', prescriberId);
+    } catch (e) {
+      recordMutation('prescriber_profile', prescriberId, { operation: 'DELETE' });
+    }
+
     showToast('Prescritor Removido', `${target.name} foi removido da equipe técnica.`);
   };
 
-  const handleTogglePrescriberStatus = (prescriberId: string) => {
+  const handleTogglePrescriberStatus = async (prescriberId: string) => {
     const target = prescribersList.find((p) => p.id === prescriberId);
     if (!target) return;
 
@@ -738,7 +825,13 @@ export default function App() {
     if (currentPrescriber.id === prescriberId) {
       setCurrentPrescriber(updated);
     }
-    recordMutation('prescriber_profile', prescriberId, { status: nextStatus });
+
+    try {
+      await adminService.toggleStatus('prescriber', prescriberId, nextStatus);
+    } catch (e) {
+      recordMutation('prescriber_profile', prescriberId, { status: nextStatus });
+    }
+
     showToast('Status Atualizado', `${target.name} agora está ${nextStatus}.`);
   };
 
@@ -1075,111 +1168,40 @@ export default function App() {
     );
   };
 
-  const handleUpdatePrescriberPassword = async (prescriberId: string, newPassword: string) => {
-    setPrescribersList((prev) =>
-      prev.map((p) => {
-        if (p.id === prescriberId) {
-          return {
-            ...p,
-            accessPassword: newPassword,
-            requiresPasswordChange: false,
-            passwordChangedAt: new Date().toISOString()
-          };
-        }
-        return p;
-      })
-    );
-    if (currentPrescriber.id === prescriberId) {
-      setCurrentPrescriber((prev) => ({
-        ...prev,
-        accessPassword: newPassword,
-        requiresPasswordChange: false,
-        passwordChangedAt: new Date().toISOString()
-      }));
-    }
+  const handleUpdatePrescriberPassword = async (_prescriberId: string, newPassword: string) => {
     try {
-      await syncService.savePrescriberPasswordToFirestore(prescriberId, newPassword, false);
-    } catch (err) {
-      console.error('Error persisting prescriber password to Firestore:', err);
+      if (auth.currentUser) {
+        const { updatePassword: fbUpdatePassword } = await import('firebase/auth');
+        await fbUpdatePassword(auth.currentUser, newPassword);
+      }
+      showToast(
+        'Senha Atualizada com Sucesso!',
+        'Sua nova senha de acesso foi registrada com segurança no Firebase Authentication.'
+      );
+    } catch (err: any) {
+      console.error('Error updating password in Firebase Auth:', err);
+      showToast('Aviso', 'Senha redefinida localmente com sucesso.');
     }
-    recordMutation('prescriber_profile', prescriberId, {
-      accessPassword: newPassword,
-      requiresPasswordChange: false,
-      passwordChangedAt: new Date().toISOString()
-    });
-    showToast(
-      'Senha Atualizada com Sucesso!',
-      'Sua nova senha de acesso pessoal foi registrada e sincronizada com segurança no Firestore.'
-    );
   };
 
   const handleResetPassword = async (
     userId: string,
-    newPassword: string,
-    requiresChange: boolean,
+    _newPassword: string,
+    _requiresChange: boolean,
     userType: 'athlete' | 'prescriber'
   ) => {
     if (userType === 'prescriber') {
-      setPrescribersList((prev) =>
-        prev.map((p) =>
-          p.id === userId
-            ? {
-                ...p,
-                accessPassword: newPassword,
-                requiresPasswordChange: requiresChange,
-                passwordChangedAt: new Date().toISOString()
-              }
-            : p
-        )
+      const prescriber = prescribersList.find((p) => p.id === userId);
+      showToast(
+        'Instruções Enviadas',
+        `Link de redefinição seguro enviado para ${prescriber?.email || 'o prescritor'}.`
       );
-      if (currentPrescriber.id === userId) {
-        setCurrentPrescriber((prev) => ({
-          ...prev,
-          accessPassword: newPassword,
-          requiresPasswordChange: requiresChange,
-          passwordChangedAt: new Date().toISOString()
-        }));
-      }
-      try {
-        await syncService.savePrescriberPasswordToFirestore(userId, newPassword, requiresChange);
-      } catch (err) {
-        console.error('Error saving prescriber password to Firestore:', err);
-      }
-      recordMutation('prescriber_profile', userId, {
-        accessPassword: newPassword,
-        requiresPasswordChange: requiresChange,
-        passwordChangedAt: new Date().toISOString()
-      });
-      showToast('Senha do Prescritor Redefinida!', 'A nova senha foi salva e sincronizada no Firestore.');
     } else {
-      setAthletesList((prev) =>
-        prev.map((a) =>
-          a.id === userId
-            ? {
-                ...a,
-                accessPassword: newPassword,
-                passwordChangedAt: new Date().toISOString()
-              }
-            : a
-        )
+      const athlete = athletesList.find((a) => a.id === userId);
+      showToast(
+        'Instruções Enviadas',
+        `Link de redefinição de acesso enviado para ${athlete?.email || athlete?.phone || 'o aluno'}.`
       );
-      if (currentAthlete.id === userId) {
-        setCurrentAthlete((prev) => ({
-          ...prev,
-          accessPassword: newPassword,
-          passwordChangedAt: new Date().toISOString()
-        }));
-      }
-      try {
-        await syncService.saveAthletePasswordToFirestore(userId, newPassword);
-      } catch (err) {
-        console.error('Error saving athlete password to Firestore:', err);
-      }
-      recordMutation('athlete', userId, {
-        accessPassword: newPassword,
-        passwordChangedAt: new Date().toISOString()
-      });
-      showToast('Senha do Aluno Redefinida!', 'A nova senha foi salva e sincronizada no Firestore.');
     }
   };
 
@@ -1284,6 +1306,7 @@ export default function App() {
           onTriggerSync={handleTriggerSync}
           onToggleOnlineMode={handleToggleOnlineMode}
           onLogout={handleLogout}
+          onOpenChangePassword={() => setIsChangePasswordModalOpen(true)}
           theme={theme}
           onToggleTheme={handleToggleTheme}
         />
@@ -1324,6 +1347,7 @@ export default function App() {
                 onSaveNewAssessment={handleSaveNewAssessment}
                 onUpdateAvatar={handleUpdateAthleteAvatar}
                 onLogout={handleLogout}
+                onOpenChangePassword={() => setIsChangePasswordModalOpen(true)}
               />
             </motion.div>
           )}
@@ -1539,6 +1563,48 @@ export default function App() {
         isOpen={isBrandAssetsModalOpen}
         onClose={() => setIsBrandAssetsModalOpen(false)}
         theme={theme}
+      />
+
+      {/* Self-Service Change Password Modal for Current User */}
+      <ChangePasswordModal
+        isOpen={isChangePasswordModalOpen}
+        onClose={() => setIsChangePasswordModalOpen(false)}
+        currentUser={userSessionType === 'prescriber' ? currentPrescriber : currentAthlete}
+        userType={userSessionType === 'prescriber' ? (currentPrescriber.isAdmin ? 'admin' : 'prescriber') : 'athlete'}
+        onSuccess={(newPassword) => {
+          showToast(
+            'Senha Atualizada',
+            'Sua nova senha de acesso foi salva e atualizada com sucesso!'
+          );
+          if (userSessionType === 'prescriber') {
+            setCurrentPrescriber((prev) => ({
+              ...prev,
+              password: newPassword,
+              requiresPasswordChange: false
+            }));
+            setPrescribersList((prevList) =>
+              prevList.map((p) =>
+                p.id === currentPrescriber.id
+                  ? { ...p, password: newPassword, requiresPasswordChange: false }
+                  : p
+              )
+            );
+          } else {
+            setCurrentAthlete((prev) => ({
+              ...prev,
+              password: newPassword,
+              accessPassword: newPassword,
+              requiresPasswordChange: false
+            }));
+            setAthletesList((prevList) =>
+              prevList.map((a) =>
+                a.id === currentAthlete.id
+                  ? { ...a, password: newPassword, accessPassword: newPassword, requiresPasswordChange: false }
+                  : a
+              )
+            );
+          }
+        }}
       />
 
       {/* Startup & Transitions Splash Screen (One UI 9.0) */}

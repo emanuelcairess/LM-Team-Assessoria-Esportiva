@@ -1,33 +1,361 @@
 rules_version = '2';
+
+/**
+ * ==============================================================================
+ * FIRESTORE SECURITY RULES - LM TEAM ASSESSORIA ESPORTIVA & MÉDICA
+ * ==============================================================================
+ *
+ * ARQUITETURA DE SEGURANÇA ZERO-TRUST COM CONTROLE BASEADO EM PAPÉIS (RBAC/ABAC):
+ * 1. Autenticação Obrigatória em Todas as Regras: Nenhum acesso público/anônimo é permitido.
+ * 2. Perfis em /users/{uid} com papéis estritos: athlete | coach | nutritionist | doctor | admin.
+ * 3. Isolamento Total de Atletas: Cada atleta acessa exclusivamente seus próprios dados de saúde.
+ * 4. Acesso Profissional Vinculado: Profissionais só acessam atletas explicitamente atribuídos.
+ * 5. Proteção de Governança: Somente administradores criam/removem profissionais e alteram papéis.
+ * 6. Imutabilidade e Anti-Privilege Escalation: Bloqueio de elevação de privilégios pelo cliente.
+ * 7. Sem fallbacks permissivos (match /{document=**} allow read, write: if false).
+ */
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Prescribers collection (coaches, doctors, nutritionists, administrators)
-    match /prescribers/{prescriberId} {
-      allow read, write: if true;
+
+    // ==========================================================================
+    // 1. FUNÇÕES AUXILIARES GLOBAIS DE SEGURANÇA E IDENTIDADE
+    // ==========================================================================
+
+    /// Verifica se o usuário está autenticado no Firebase Authentication
+    function isSignedIn() {
+      return request.auth != null && request.auth.uid != null;
     }
 
-    // Exercise Library Bank
-    match /exercises/{exerciseId} {
-      allow read, write: if true;
+    /// Atalho para dados da requisição de entrada
+    function incoming() {
+      return request.resource.data;
     }
 
-    // Athletes collection and their real-time checkin subcollections
+    /// Atalho para dados existentes no documento
+    function existing() {
+      return resource.data;
+    }
+
+    /// Validação estrita de formato e tamanho de IDs para prevenir injeção (ID Poisoning)
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-\\.]+$');
+    }
+
+    /// Verifica se o documento de perfil /users/{uid} existe para o usuário autenticado
+    function hasUserDoc() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    /// Obtém os dados do documento /users/{uid}
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    /// Retorna o role do usuário autenticado ou 'none'
+    function getUserRole() {
+      return hasUserDoc() && getUserData().role is string ? getUserData().role : 'none';
+    }
+
+    /// Verifica se o usuário é Administrador Geral do Sistema
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'emanuelcairess@gmail.com' ||
+        (hasUserDoc() && getUserData().role == 'admin') ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    /// Verifica se o usuário é Coach / Treinador
+    function isCoach() {
+      return isSignedIn() && (getUserRole() == 'coach' || isAdmin());
+    }
+
+    /// Verifica se o usuário é Nutricionista
+    function isNutritionist() {
+      return isSignedIn() && (getUserRole() == 'nutritionist' || isAdmin());
+    }
+
+    /// Verifica se o usuário é Médico do Esporte / Endocrinologista
+    function isDoctor() {
+      return isSignedIn() && (getUserRole() == 'doctor' || isAdmin());
+    }
+
+    /// Verifica se o usuário é qualquer Profissional de Saúde/Esporte ou Admin
+    function isProfessional() {
+      return isCoach() || isNutritionist() || isDoctor() || isAdmin();
+    }
+
+    /// Verifica se o usuário autenticado é o próprio Atleta dono do registro
+    function isAthleteOwner(athleteId) {
+      return isSignedIn() && (
+        request.auth.uid == athleteId ||
+        (hasUserDoc() && getUserData().athleteId == athleteId)
+      );
+    }
+
+    /// Verifica se o usuário autenticado é o Prescritor dono do registro
+    function isPrescriberOwner(prescriberId) {
+      return isSignedIn() && (
+        request.auth.uid == prescriberId ||
+        (hasUserDoc() && getUserData().prescriberId == prescriberId)
+      );
+    }
+
+    /// Verifica se o profissional autenticado está explicitamente vinculado ao Atleta
+    function isLinkedProfessional(athleteId) {
+      return isSignedIn() && (
+        isAdmin() ||
+        (isProfessional() && (
+          // 1. Verificação na lista assignedAthleteIds do profissional
+          (hasUserDoc() && getUserData().assignedAthleteIds is list && athleteId in getUserData().assignedAthleteIds) ||
+          // 2. Verificação nos campos diretos do documento do atleta
+          (exists(/databases/$(database)/documents/athletes/$(athleteId)) && (
+            get(/databases/$(database)/documents/athletes/$(athleteId)).data.coachId == request.auth.uid ||
+            get(/databases/$(database)/documents/athletes/$(athleteId)).data.nutritionistId == request.auth.uid ||
+            get(/databases/$(database)/documents/athletes/$(athleteId)).data.doctorId == request.auth.uid ||
+            (get(/databases/$(database)/documents/athletes/$(athleteId)).data.assignedPrescriberIds is list &&
+             get(/databases/$(database)/documents/athletes/$(athleteId)).data.assignedPrescriberIds.hasAny([request.auth.uid]))
+          ))
+        ))
+      );
+    }
+
+    // ==========================================================================
+    // 2. REGRAS PARA PERFIS DE USUÁRIO: /users/{uid}
+    // ==========================================================================
+    match /users/{userId} {
+      // Leitura: O próprio usuário, Administrador ou profissional vinculado ao atleta
+      allow get: if isSignedIn() && (
+        request.auth.uid == userId ||
+        isAdmin() ||
+        isLinkedProfessional(userId)
+      );
+
+      // Listagem: Apenas Administradores
+      allow list: if isAdmin();
+
+      // Criação de perfil:
+      // - Administrador pode criar qualquer perfil e role
+      // - Usuário novo autenticado pode criar APENAS seu próprio perfil com role 'athlete' (previne escalação)
+      allow create: if isSignedIn() && isValidId(userId) && (
+        isAdmin() ||
+        (
+          request.auth.uid == userId &&
+          incoming().role == 'athlete' &&
+          incoming().id == userId &&
+          incoming().email is string
+        )
+      );
+
+      // Atualização de perfil:
+      // - Administrador: atualização irrestrita de roles e atribuições
+      // - Próprio usuário: pode atualizar APENAS campos cadastrais não-sensíveis (bloqueia alteração de role/admin)
+      allow update: if isSignedIn() && (
+        isAdmin() ||
+        (
+          request.auth.uid == userId &&
+          // Garante que o role e status não sofram adulteração pelo cliente comum
+          incoming().role == existing().role &&
+          (!existing().keys().hasAny(['isAdmin']) || incoming().isAdmin == existing().isAdmin) &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'phone', 'avatar', 'birthDate', 'cpf', 'bio',
+            'athleteId', 'updatedAt', 'accessPassword', 'passwordChangedAt',
+            'requiresPasswordChange', 'gender'
+          ])
+        )
+      );
+
+      // Exclusão: Apenas Administrador
+      allow delete: if isAdmin();
+    }
+
+    // ==========================================================================
+    // 3. REGRAS PARA ATLETAS E DADOS CLÍNICOS / ESPORTIVOS: /athletes/{athleteId}
+    // ==========================================================================
     match /athletes/{athleteId} {
-      allow read, write: if true;
+      // Leitura: O próprio atleta, Administrador ou profissional de saúde/esporte vinculado
+      allow get: if isSignedIn() && (
+        isAthleteOwner(athleteId) ||
+        isLinkedProfessional(athleteId)
+      );
 
-      match /{allSubcollections=**} {
-        allow read, write: if true;
+      // Listagem: Administradores e profissionais de saúde autorizados
+      allow list: if isProfessional();
+
+      // Criação: Apenas Administradores e Profissionais da Assessoria
+      allow create: if isProfessional() && isValidId(athleteId);
+
+      // Atualização:
+      // - Administrador ou Profissional Vinculado: atualização completa de planos e dados clínicos
+      // - Próprio Atleta: pode atualizar apenas métricas corporais pessoais e dados cadastrais
+      allow update: if isSignedIn() && (
+        isAdmin() ||
+        isLinkedProfessional(athleteId) ||
+        (
+          isAthleteOwner(athleteId) &&
+          // Bloqueia alteração de coachId, nutritionistId, doctorId ou status pelo atleta
+          incoming().status == existing().status &&
+          (!existing().keys().hasAny(['coachId']) || incoming().coachId == existing().coachId) &&
+          (!existing().keys().hasAny(['nutritionistId']) || incoming().nutritionistId == existing().nutritionistId) &&
+          (!existing().keys().hasAny(['doctorId']) || incoming().doctorId == existing().doctorId) &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'phone', 'avatar', 'currentWeightKg', 'measurementsHistory',
+            'adherencePercentage', 'notes', 'updatedAt', 'accessPassword', 'passwordChangedAt'
+          ])
+        )
+      );
+
+      // Exclusão de Atleta: Apenas Administrador
+      allow delete: if isAdmin();
+
+      // ------------------------------------------------------------------------
+      // SUBCOLEÇÕES DO ATLETA (Check-ins de Treino, Dieta, Suplementos e Antropometria)
+      // ------------------------------------------------------------------------
+      match /checkins/{checkinId} {
+        allow read: if isSignedIn() && (isAthleteOwner(athleteId) || isLinkedProfessional(athleteId));
+        allow create, update: if isSignedIn() && (isAthleteOwner(athleteId) || isLinkedProfessional(athleteId));
+        allow delete: if isSignedIn() && (isAthleteOwner(athleteId) || isAdmin());
+      }
+
+      match /exercise_set_checkins/{checkinId} {
+        allow read: if isSignedIn() && (isAthleteOwner(athleteId) || isLinkedProfessional(athleteId));
+        allow create, update: if isSignedIn() && (isAthleteOwner(athleteId) || isLinkedProfessional(athleteId));
+        allow delete: if isSignedIn() && (isAthleteOwner(athleteId) || isAdmin());
+      }
+
+      match /meal_checkins/{checkinId} {
+        allow read: if isSignedIn() && (isAthleteOwner(athleteId) || isLinkedProfessional(athleteId));
+        allow create, update: if isSignedIn() && (isAthleteOwner(athleteId) || isLinkedProfessional(athleteId));
+        allow delete: if isSignedIn() && (isAthleteOwner(athleteId) || isAdmin());
+      }
+
+      match /supplement_checkins/{checkinId} {
+        allow read: if isSignedIn() && (isAthleteOwner(athleteId) || isLinkedProfessional(athleteId));
+        allow create, update: if isSignedIn() && (isAthleteOwner(athleteId) || isLinkedProfessional(athleteId));
+        allow delete: if isSignedIn() && (isAthleteOwner(athleteId) || isAdmin());
+      }
+
+      match /anthropometric_evaluations/{evalId} {
+        allow read: if isSignedIn() && (isAthleteOwner(athleteId) || isLinkedProfessional(athleteId));
+        allow create, update: if isSignedIn() && (isAthleteOwner(athleteId) || isLinkedProfessional(athleteId));
+        allow delete: if isAdmin() || (isSignedIn() && isAthleteOwner(athleteId));
       }
     }
 
-    // Prescriptions, workout splits, nutrition plans
-    match /prescriptions/{allPaths=**} {
-      allow read, write: if true;
+    // ==========================================================================
+    // 4. REGRAS PARA PRESCRIÇÕES OFICIAIS (Treinos, Nutrição e Manipulados)
+    // /prescriptions/{type}/athletes/{athleteId} ou subcoleções
+    // ==========================================================================
+    match /prescriptions/{prescriptionType}/athletes/{athleteId} {
+      // Leitura: O atleta dono da prescrição, profissional vinculado ou admin
+      allow read: if isSignedIn() && (
+        isAthleteOwner(athleteId) ||
+        isLinkedProfessional(athleteId)
+      );
+
+      // Criação, Edição e Exclusão: Estritamente reservado para Profissionais Vinculados e Admin
+      // (Atletas têm acesso estritamente SOMENTE-LEITURA às suas prescrições oficiais)
+      allow create, update, delete: if isLinkedProfessional(athleteId);
     }
 
-    // Fallback for app documents
+    // Regra de segurança para caminhos aninhados em /prescriptions/{allPaths=**}
+    match /prescriptions/{allPaths=**} {
+      allow read: if isSignedIn() && isProfessional();
+      allow write: if isProfessional();
+    }
+
+    // ==========================================================================
+    // 5. REGRAS PARA O CORPO TÉCNICO / PRESCRITORES: /prescribers/{prescriberId}
+    // ==========================================================================
+    match /prescribers/{prescriberId} {
+      // Leitura: Qualquer usuário autenticado pode ler informações básicas do corpo técnico
+      allow read: if isSignedIn();
+
+      // Criação de novos prescritores: Estritamente Administrador
+      allow create: if isAdmin() && isValidId(prescriberId);
+
+      // Atualização de dados do prescritor:
+      // - Administrador pode alterar tudo (funções, status, privilégios)
+      // - O próprio prescritor pode atualizar sua bio, telefone, avatar e senha
+      //   (NÃO pode se autopromover a isMaster ou isAdmin nem mudar roleType)
+      allow update: if isSignedIn() && (
+        isAdmin() ||
+        (
+          isPrescriberOwner(prescriberId) &&
+          incoming().roleType == existing().roleType &&
+          (!existing().keys().hasAny(['isMaster']) || incoming().isMaster == existing().isMaster) &&
+          (!existing().keys().hasAny(['isAdmin']) || incoming().isAdmin == existing().isAdmin) &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'phone', 'avatar', 'bio', 'crm_crn_cref',
+            'accessPassword', 'passwordChangedAt', 'requiresPasswordChange', 'updatedAt'
+          ])
+        )
+      );
+
+      // Exclusão de prescritor: Estritamente Administrador
+      allow delete: if isAdmin();
+    }
+
+    // ==========================================================================
+    // 6. BANCO DE EXERCÍCIOS OFICIAL: /exercises/{exerciseId}
+    // ==========================================================================
+    match /exercises/{exerciseId} {
+      // Leitura: Todos os usuários autenticados da assessoria (atletas e treinadores)
+      allow read: if isSignedIn();
+
+      // Criação e Edição: Apenas Profissionais (Coaches/Admins)
+      allow create, update: if isProfessional() && isValidId(exerciseId);
+
+      // Exclusão: Apenas Profissionais e Administradores
+      allow delete: if isProfessional();
+    }
+
+    // ==========================================================================
+    // 7. TEMPLATES E MODELOS (Treinos e Fórmulas): /workout_templates e /formula_templates
+    // ==========================================================================
+    match /workout_templates/{templateId} {
+      allow read: if isSignedIn();
+      allow write: if isProfessional() && isValidId(templateId);
+    }
+
+    match /formula_templates/{templateId} {
+      allow read: if isSignedIn();
+      allow write: if isProfessional() && isValidId(templateId);
+    }
+
+    // ==========================================================================
+    // 8. REGISTRO DE ADMINISTRADORES DO SISTEMA: /admins/{adminId}
+    // ==========================================================================
+    match /admins/{adminId} {
+      allow read, write: if isAdmin();
+    }
+
+    // ==========================================================================
+    // 9. LOGS DE AUDITORIA DE GOVERNANÇA E SEGURANÇA: /audit_logs/{logId}
+    // ==========================================================================
+    match /audit_logs/{logId} {
+      // Leitura de logs de auditoria: Estritamente Administradores Gerais
+      allow read: if isAdmin();
+      // Criação de log: Administrador ou backend autenticado
+      allow create: if isSignedIn() && (
+        isAdmin() ||
+        (
+          incoming().actorUid == request.auth.uid &&
+          incoming().action is string &&
+          incoming().resource is string &&
+          incoming().resourceId is string
+        )
+      );
+      // Logs são imutáveis (sem update ou delete por nenhum cliente)
+      allow update, delete: if false;
+    }
+
+    // ==========================================================================
+    // 10. DEFAULT DENY GLOBAL CATCH-ALL (Zero-Trust)
+    // ==========================================================================
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }

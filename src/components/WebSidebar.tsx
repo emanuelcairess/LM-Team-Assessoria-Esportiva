@@ -28,7 +28,6 @@ import {
 } from 'lucide-react';
 import { ModuleType, UserRole, AthleteProfile, CloudSyncStatus } from '../types';
 import { soundFx } from '../utils/audio';
-import { TeamLmBrand } from './TeamLmBrand';
 
 interface WebSidebarProps {
   activeModule: ModuleType;
@@ -157,81 +156,14 @@ export const WebSidebar: React.FC<WebSidebarProps> = ({
           : 'bg-slate-950/80 border-white/10 shadow-2xl backdrop-blur-2xl text-slate-200'
       }`}
     >
-      {/* Brand Header */}
-      <div className={`p-4 border-b ${theme === 'light' ? 'border-slate-200' : 'border-white/10'} flex items-center justify-between gap-3`}>
-        <div className="flex items-center gap-3 min-w-0">
-          <div
-            onClick={() => {
-              soundFx.playClick();
-              if (onOpenBrandAssetsModal) {
-                onOpenBrandAssetsModal();
-              } else {
-                onSelectModule('dashboard');
-              }
-            }}
-            className="cursor-pointer shrink-0"
-            title="Design System & Assets Oficiais LM Team"
-          >
-            <TeamLmBrand size="sm" showText={false} animated />
-          </div>
-
-          {!isCollapsed && (
-            <div
-              className="min-w-0 cursor-pointer"
-              onClick={() => {
-                soundFx.playClick();
-                if (onOpenBrandAssetsModal) {
-                  onOpenBrandAssetsModal();
-                } else {
-                  onSelectModule('dashboard');
-                }
-              }}
-              title="Design System & Assets Oficiais LM Team"
-            >
-              <h2 className={`text-sm font-black tracking-tight flex items-center gap-1.5 leading-none ${
-                theme === 'light' ? 'text-slate-900' : 'text-white'
-              }`}>
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 font-black">
-                  TEAM LM
-                </span>
-                <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-purple-900/60 text-purple-300 border border-purple-500/30">
-                  PRO
-                </span>
-              </h2>
-              <p className={`text-[10px] font-bold tracking-widest uppercase truncate mt-0.5 ${
-                theme === 'light' ? 'text-amber-700' : 'text-amber-400/90'
-              }`}>
-                CONSULTORIA
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* Collapse toggle button */}
-        <button
-          onClick={() => {
-            soundFx.playClick();
-            onToggleCollapse();
-          }}
-          className={`p-1.5 rounded-xl transition ${
-            theme === 'light'
-              ? 'bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900'
-              : 'bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white'
-          }`}
-          title={isCollapsed ? 'Expandir barra lateral' : 'Recolher barra lateral'}
-        >
-          {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-        </button>
-      </div>
-
       {/* Athlete Profile Snippet */}
-      <div className={`p-3 border-b ${theme === 'light' ? 'border-slate-200' : 'border-white/10'}`}>
+      <div className={`p-3 border-b ${theme === 'light' ? 'border-slate-200' : 'border-white/10'} ${isCollapsed ? 'flex flex-col items-center gap-2' : 'flex items-center justify-between gap-2'}`}>
         <div
           onClick={() => {
             soundFx.playClick();
             onSelectModule('profile');
           }}
-          className={`flex items-center gap-3 p-2 rounded-2xl cursor-pointer transition ${
+          className={`flex items-center gap-3 p-2 rounded-2xl cursor-pointer transition ${isCollapsed ? 'w-full justify-center' : 'flex-1 min-w-0'} ${
             theme === 'light' ? 'bg-slate-100/90 hover:bg-slate-200/90 border border-slate-200/80' : 'bg-white/5 hover:bg-white/10'
           }`}
           title="Ver perfil do atleta"
@@ -258,6 +190,22 @@ export const WebSidebar: React.FC<WebSidebarProps> = ({
             </div>
           )}
         </div>
+
+        {/* Collapse toggle button */}
+        <button
+          onClick={() => {
+            soundFx.playClick();
+            onToggleCollapse();
+          }}
+          className={`p-1.5 rounded-xl transition shrink-0 ${
+            theme === 'light'
+              ? 'bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900'
+              : 'bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white'
+          }`}
+          title={isCollapsed ? 'Expandir barra lateral' : 'Recolher barra lateral'}
+        >
+          {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+        </button>
       </div>
 
       {/* Quick Search / Command Palette Bar */}
@@ -479,13 +427,13 @@ export const WebSidebar: React.FC<WebSidebarProps> = ({
               soundFx.playClick();
               onToggleTheme();
             }}
-            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white flex items-center justify-center transition"
+            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white flex items-center justify-center transition shrink-0"
             title={theme === 'dark' ? 'Mudar para Modo Claro (T)' : 'Mudar para Modo Escuro (T)'}
           >
             {theme === 'dark' ? (
-              <Sun className="w-4 h-4 text-amber-400" />
+              <Sun className="w-4 h-4 text-amber-400 shrink-0" />
             ) : (
-              <Moon className="w-4 h-4 text-cyan-500" />
+              <Moon className="w-4 h-4 text-cyan-500 shrink-0" />
             )}
           </button>
 

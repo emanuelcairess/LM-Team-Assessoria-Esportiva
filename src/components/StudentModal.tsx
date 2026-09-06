@@ -15,11 +15,16 @@ import {
   Sparkles,
   AlertCircle,
   Save,
-  Check
+  Check,
+  Dice5,
+  Eye,
+  EyeOff,
+  Copy
 } from 'lucide-react';
 import { AthleteProfile } from '../types';
 import { soundFx } from '../utils/audio';
 import { ImageUploader } from './ImageUploader';
+import { adminService } from '../services/adminService';
 
 interface StudentModalProps {
   isOpen: boolean;
@@ -48,9 +53,11 @@ export const StudentModal: React.FC<StudentModalProps> = ({
   // Form Fields
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [copiedPassword, setCopiedPassword] = useState(false);
   const [cpf, setCpf] = useState('');
   const [birthDate, setBirthDate] = useState('');
-  const [accessPassword, setAccessPassword] = useState('lmteam2026');
   const [email, setEmail] = useState('');
   const [category, setCategory] = useState('Avançado / Classic Physique');
   const [goal, setGoal] = useState<'Hipertrofia' | 'Cutting' | 'Manutenção' | 'Recomposição'>('Hipertrofia');
@@ -65,14 +72,28 @@ export const StudentModal: React.FC<StudentModalProps> = ({
   // Validation & Feedback
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const generateRandomPassword = () => {
+    soundFx.playClick();
+    const randomPin = Math.floor(100000 + Math.random() * 900000).toString();
+    setPassword(randomPin);
+  };
+
+  const handleCopyAccess = () => {
+    soundFx.playClick();
+    const text = `*LM TEAM - ACESSO AO APLICATIVO DO ALUNO*\nOlá, *${name || 'Atleta'}*! Seu acesso à consultoria está liberado.\n\n📱 *Telefone/ID:* ${phone || '(Seu Telefone)'}\n🔑 *Senha de Acesso:* ${password || '123456'}\n\n👉 Acesse o app no celular ou navegador com seu telefone e senha.`;
+    navigator.clipboard.writeText(text);
+    setCopiedPassword(true);
+    setTimeout(() => setCopiedPassword(false), 2500);
+  };
+
   // Initialize or reset form
   useEffect(() => {
     if (athleteToEdit) {
       setName(athleteToEdit.name || '');
       setPhone(athleteToEdit.phone || '');
+      setPassword(athleteToEdit.password || '123456');
       setCpf(athleteToEdit.cpf || '');
       setBirthDate(athleteToEdit.birthDate || '1998-05-15');
-      setAccessPassword(athleteToEdit.accessPassword || 'lmteam2026');
       setEmail(athleteToEdit.email || '');
       setCategory(athleteToEdit.category || 'Avançado / Classic Physique');
       setGoal(athleteToEdit.goal || 'Hipertrofia');
@@ -86,9 +107,9 @@ export const StudentModal: React.FC<StudentModalProps> = ({
     } else {
       setName('');
       setPhone('(11) 9');
+      setPassword(Math.floor(100000 + Math.random() * 900000).toString());
       setCpf('');
       setBirthDate('2000-01-15');
-      setAccessPassword('lmteam2026');
       setEmail('');
       setCategory('Avançado / Classic Physique');
       setGoal('Hipertrofia');
@@ -166,6 +187,12 @@ export const StudentModal: React.FC<StudentModalProps> = ({
       return;
     }
 
+    if (!password.trim()) {
+      soundFx.playRestAlert();
+      setErrorMessage('Por favor, defina a senha de acesso do aluno.');
+      return;
+    }
+
     const cleanCpf = cpf.replace(/\D/g, '');
     if (cleanCpf.length !== 11) {
       soundFx.playRestAlert();
@@ -187,9 +214,9 @@ export const StudentModal: React.FC<StudentModalProps> = ({
       avatar: avatar || DEFAULT_AVATARS[0],
       email: email.trim() || `${name.toLowerCase().replace(/\s+/g, '.')}@lmteam.com`,
       phone: phone.trim(),
+      password: password.trim(),
       cpf: cpf.trim(),
       birthDate: birthDate,
-      accessPassword: accessPassword.trim() || 'lmteam2026',
       age: calculatedAge,
       category: category,
       coachName: athleteToEdit?.coachName || 'Dr. Lucas Mendes (Head Coach)',
@@ -226,6 +253,12 @@ export const StudentModal: React.FC<StudentModalProps> = ({
       cardioDaysPerWeek: Number(cardioDays) || 6,
       cardioTargetKcal: athleteToEdit?.cardioTargetKcal || 300
     };
+
+    if (athletePayload.password) {
+      adminService.setAthletePassword(athletePayload.id, athletePayload.password).catch((err) => {
+        console.warn('Notice saving athlete password to backend:', err);
+      });
+    }
 
     soundFx.playSuccess();
     onSave(athletePayload);
@@ -300,18 +333,18 @@ export const StudentModal: React.FC<StudentModalProps> = ({
             size="md"
           />
 
-          {/* Section 1: Dados Pessoais Obrigatórios (Nome, Telefone, CPF, Nascimento) */}
+          {/* Section 1: Dados Pessoais & Acesso do Aluno (Nome, Telefone, Senha Gerada, CPF, Nascimento) */}
           <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-4">
             <h4 className="text-xs font-black uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
               <ShieldCheck className="w-4 h-4" />
-              <span>Dados Obrigatórios de Identificação</span>
+              <span>Identificação & Credenciais de Acesso do Aluno</span>
             </h4>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Nome Completo */}
               <div className="space-y-1 sm:col-span-2">
                 <label className="text-xs font-bold text-slate-200">
-                  Nome Completo <span className="text-rose-400">*</span>
+                  Nome Completo do Aluno <span className="text-rose-400">*</span>
                 </label>
                 <input
                   type="text"
@@ -333,7 +366,7 @@ export const StudentModal: React.FC<StudentModalProps> = ({
                     <Phone className="w-3 h-3 text-cyan-400" />
                     <span>Telefone / WhatsApp <span className="text-rose-400">*</span></span>
                   </span>
-                  <span className="text-[10px] text-slate-400 font-mono">ID de Acesso</span>
+                  <span className="text-[10px] text-cyan-400 font-mono">ID de Login</span>
                 </label>
                 <input
                   type="tel"
@@ -344,6 +377,56 @@ export const StudentModal: React.FC<StudentModalProps> = ({
                   onChange={handlePhoneChange}
                   className="w-full px-4 py-2.5 rounded-xl bg-slate-900/90 border border-white/15 focus:border-cyan-400 text-white font-mono text-xs placeholder:text-slate-500 outline-none transition"
                 />
+              </div>
+
+              {/* Senha de Acesso Gerada pelo Prescritor */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-200 flex items-center gap-1">
+                    <KeyRound className="w-3 h-3 text-emerald-400" />
+                    <span>Senha de Acesso do Aluno <span className="text-rose-400">*</span></span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={generateRandomPassword}
+                    className="text-[10px] text-emerald-400 hover:text-emerald-300 font-semibold flex items-center gap-1 transition"
+                    title="Gerar código PIN aleatório"
+                  >
+                    <Dice5 className="w-3 h-3" />
+                    <span>Gerar PIN</span>
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    placeholder="Ex: 123456"
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (errorMessage) setErrorMessage(null);
+                    }}
+                    className="w-full pl-3.5 pr-16 py-2.5 rounded-xl bg-slate-900/90 border border-emerald-500/30 focus:border-emerald-400 text-white font-mono text-xs outline-none transition"
+                  />
+                  <div className="absolute inset-y-0 right-0 pr-2 flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="p-1 text-slate-400 hover:text-white transition"
+                      title={showPassword ? 'Ocultar senha' : 'Ver senha'}
+                    >
+                      {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCopyAccess}
+                      className="p-1 text-emerald-400 hover:text-emerald-300 transition"
+                      title="Copiar dados de acesso"
+                    >
+                      {copiedPassword ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
               </div>
 
               {/* CPF */}
@@ -388,24 +471,21 @@ export const StudentModal: React.FC<StudentModalProps> = ({
                   className="w-full px-4 py-2.5 rounded-xl bg-slate-900/90 border border-white/15 focus:border-cyan-400 text-white text-xs outline-none transition"
                 />
               </div>
+            </div>
 
-              {/* Senha de Acesso do Prescritor */}
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
-                  <span className="flex items-center gap-1">
-                    <KeyRound className="w-3 h-3 text-indigo-400" />
-                    <span>Senha de Acesso do Aluno</span>
-                  </span>
-                  <span className="text-[10px] text-indigo-300 font-mono">Login</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="lmteam2026"
-                  value={accessPassword}
-                  onChange={(e) => setAccessPassword(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl bg-slate-900/90 border border-white/15 focus:border-indigo-400 text-white font-mono text-xs outline-none transition"
-                />
-              </div>
+            {/* Quick Share Banner */}
+            <div className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs">
+              <span className="text-[11px] text-emerald-300">
+                Acesso do aluno liberado via Telefone e Senha configurada.
+              </span>
+              <button
+                type="button"
+                onClick={handleCopyAccess}
+                className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[11px] font-bold flex items-center gap-1.5 transition"
+              >
+                {copiedPassword ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                <span>{copiedPassword ? 'Copiado!' : 'Copiar para WhatsApp'}</span>
+              </button>
             </div>
           </div>
 
@@ -534,3 +614,4 @@ export const StudentModal: React.FC<StudentModalProps> = ({
     </div>
   );
 };
+

@@ -1302,21 +1302,35 @@ export const WorkoutModal: React.FC<WorkoutModalProps> = ({
                   </div>
                 </div>
 
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={cardioEnabled || dayType === 'cardio_only'}
-                    onChange={(e) => {
-                      soundFx.playClick();
-                      setCardioEnabled(e.target.checked);
-                      if (!e.target.checked && dayType === 'cardio_only') {
-                        setDayType('rest_day');
-                      }
-                    }}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal-600"></div>
-                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playClick();
+                    const nextVal = !(cardioEnabled || dayType === 'cardio_only');
+                    setCardioEnabled(nextVal);
+                    if (!nextVal && dayType === 'cardio_only') {
+                      setDayType('rest_day');
+                    }
+                  }}
+                  className={`w-12 h-7 rounded-full transition-colors duration-200 relative p-0.5 border shrink-0 flex items-center cursor-pointer shadow-inner ${
+                    cardioEnabled || dayType === 'cardio_only'
+                      ? 'bg-teal-600 border-teal-400'
+                      : 'bg-white/10 border-white/20 hover:bg-white/15'
+                  }`}
+                  title={cardioEnabled || dayType === 'cardio_only' ? 'Desativar Cardio' : 'Ativar Cardio'}
+                >
+                  <motion.div
+                    animate={{ x: (cardioEnabled || dayType === 'cardio_only') ? 20 : 0 }}
+                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                    className="w-5 h-5 rounded-full bg-white shadow-md flex items-center justify-center shrink-0"
+                  >
+                    {(cardioEnabled || dayType === 'cardio_only') ? (
+                      <Check className="w-3 h-3 text-teal-700 stroke-[3] shrink-0" />
+                    ) : (
+                      <div className="w-1.5 h-1.5 rounded-full bg-slate-400/60" />
+                    )}
+                  </motion.div>
+                </button>
               </div>
 
               {(cardioEnabled || dayType === 'cardio_only') ? (
