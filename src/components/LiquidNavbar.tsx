@@ -68,7 +68,7 @@ export const LiquidNavbar: React.FC<LiquidNavbarProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isMoreOpen]);
 
-  const isCoach = currentRole === 'coach' || canAccessAdmin;
+  const isCoach = currentRole === 'coach' || currentRole === 'admin' || canAccessAdmin;
   const primaryIds = isCoach ? COACH_PRIMARY_BOTTOM_IDS : ATHLETE_PRIMARY_BOTTOM_IDS;
   const moreIds = isCoach ? COACH_MORE_BOTTOM_IDS : ATHLETE_MORE_BOTTOM_IDS;
 

@@ -464,7 +464,7 @@ export const SupplementView: React.FC<SupplementViewProps> = ({
                         {sup.name}
                       </h3>
                       <p className="text-xs text-slate-300 mt-0.5">
-                        Posologia: <strong className="text-purple-200">{sup.dosage}</strong>
+                        Posologia: <strong className="text-purple-900 dark:text-purple-200 font-extrabold">{sup.dosage}</strong>
                         {sup.ingredients && sup.ingredients.length > 0 && (
                           <span className="text-slate-400 ml-2">
                             • {sup.ingredients.length} componentes magistrais
@@ -580,7 +580,7 @@ export const SupplementView: React.FC<SupplementViewProps> = ({
                                     <span className="font-semibold text-white truncate">{activeName}</span>
                                   </div>
                                   {dose && (
-                                    <span className="text-purple-300 font-mono font-bold text-[11px] shrink-0 bg-purple-950/50 px-2 py-0.5 rounded-md border border-purple-500/30">
+                                    <span className="text-purple-900 dark:text-purple-300 font-mono font-bold text-[11px] shrink-0 bg-purple-100 dark:bg-purple-950/50 px-2 py-0.5 rounded-md border border-purple-300 dark:border-purple-500/30">
                                       {dose}
                                     </span>
                                   )}

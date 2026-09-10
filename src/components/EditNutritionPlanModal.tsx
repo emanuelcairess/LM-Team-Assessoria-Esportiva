@@ -143,6 +143,17 @@ export const EditNutritionPlanModal: React.FC<EditNutritionPlanModalProps> = ({
     }
   }, [isOpen, nutritionPlan]);
 
+  // Handle Escape key to close modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   // Calculate live sum of all foods in all meals
@@ -452,11 +463,19 @@ export const EditNutritionPlanModal: React.FC<EditNutritionPlanModalProps> = ({
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 overflow-y-auto bg-slate-950/80 backdrop-blur-xl animate-in fade-in duration-200">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 overflow-y-auto bg-slate-950/80 backdrop-blur-xl animate-in fade-in duration-200"
+      role="presentation"
+      onClick={onClose}
+    >
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 15 }}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-nutrition-plan-title"
         className="relative w-full max-w-4xl max-h-[92vh] flex flex-col rounded-3xl modal-liquid-glass border border-emerald-500/30 shadow-2xl overflow-hidden"
       >
         {/* Header Strip */}

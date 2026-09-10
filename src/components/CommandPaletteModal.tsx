@@ -36,6 +36,7 @@ interface CommandPaletteModalProps {
   onRoleToggle?: () => void;
   canSwitchRole?: boolean;
   canSwitchAthlete?: boolean;
+  canAccessAdmin?: boolean;
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
   onOpenReportModal: () => void;
@@ -52,6 +53,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onRoleToggle,
   canSwitchRole = false,
   canSwitchAthlete = false,
+  canAccessAdmin = false,
   theme,
   onToggleTheme,
   onOpenReportModal,
@@ -73,9 +75,11 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
 
   if (!isOpen) return null;
 
+  const isUserAdminOrCoach = canAccessAdmin || currentRole === 'admin' || currentRole === 'coach' || (canSwitchRole && (currentRole === 'coach' || currentRole === 'admin'));
+
   // Build searchable items using shared navigation definitions
   const navigationItems = NAVIGATION_DESTINATIONS.filter((d) =>
-    !d.requiresPrescriber || (canSwitchRole && currentRole === 'coach')
+    !d.requiresPrescriber || isUserAdminOrCoach
   ).map((dest) => ({
     id: `nav-${dest.id}`,
     type: 'module' as const,
@@ -88,6 +92,16 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   }));
 
   const quickActions = [
+    ...(isUserAdminOrCoach ? [{
+      id: 'act-user-maintenance',
+      type: 'action' as const,
+      label: 'Manutenção de Usuários (Alunos & Equipe)',
+      category: 'Administração',
+      shortcut: '8',
+      icon: ShieldAlert,
+      color: '#818cf8',
+      action: () => onSelectModule('coach_admin')
+    }] : []),
     {
       id: 'act-pdf',
       type: 'action' as const,

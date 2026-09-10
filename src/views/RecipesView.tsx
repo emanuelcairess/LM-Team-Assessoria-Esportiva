@@ -19,6 +19,28 @@ interface RecipesViewProps {
   recipes: FitRecipe[];
 }
 
+const RecipeImage: React.FC<{ src: string; alt: string; className?: string }> = ({ src, alt, className }) => {
+  const [hasError, setHasError] = useState(false);
+  if (hasError || !src) {
+    return (
+      <div className={`w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-teal-950 via-slate-900 to-slate-950 text-teal-300 p-4 text-center select-none ${className || ''}`}>
+        <ChefHat className="w-10 h-10 mb-1.5 opacity-80 text-teal-400" />
+        <span className="text-xs font-bold text-slate-200 line-clamp-1">{alt}</span>
+        <span className="text-[10px] text-teal-300/80 mt-0.5 font-medium">Receita Fit LM Team</span>
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      loading="lazy"
+      onError={() => setHasError(true)}
+      className={className}
+    />
+  );
+};
+
 export const RecipesView: React.FC<RecipesViewProps> = ({ recipes }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('todos');
@@ -124,7 +146,7 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ recipes }) => {
             <div>
               {/* Recipe Image with overlay badge */}
               <div className="relative h-44 w-full overflow-hidden bg-slate-950">
-                <img
+                <RecipeImage
                   src={recipe.image}
                   alt={recipe.title}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
@@ -211,8 +233,8 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ recipes }) => {
               {/* Scrollable Content */}
               <div className="flex-1 overflow-y-auto py-4 space-y-5 pr-1">
                 {/* Image + Macros Banner */}
-                <div className="relative h-52 rounded-2xl overflow-hidden">
-                  <img
+                <div className="relative h-52 rounded-2xl overflow-hidden bg-slate-950">
+                  <RecipeImage
                     src={activeRecipe.image}
                     alt={activeRecipe.title}
                     className="w-full h-full object-cover"

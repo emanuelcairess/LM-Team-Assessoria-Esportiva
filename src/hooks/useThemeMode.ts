@@ -15,10 +15,16 @@ export function useThemeMode() {
   useEffect(() => {
     try {
       if (isDarkTheme) {
-        document.body.classList.remove('light-theme');
+        document.body.classList.remove('light-theme', 'light');
+        document.body.classList.add('dark');
+        document.documentElement.classList.remove('light-theme', 'light');
+        document.documentElement.classList.add('dark');
         localStorage.setItem('lm_team_theme', 'dark');
       } else {
-        document.body.classList.add('light-theme');
+        document.body.classList.remove('dark');
+        document.body.classList.add('light-theme', 'light');
+        document.documentElement.classList.remove('dark');
+        document.documentElement.classList.add('light-theme', 'light');
         localStorage.setItem('lm_team_theme', 'light');
       }
     } catch {}

@@ -359,10 +359,17 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
             <Droplets className="w-6 h-6" />
           </div>
           <div>
-            <h4 className="text-sm font-bold text-white">Meta de Hidratação Diária</h4>
-            <p className="text-xs text-cyan-300 font-mono">
-              Registrado: <strong>{(waterDrunkMl / 1000).toFixed(1)}L</strong> de{' '}
-              <strong>{nutritionPlan.waterIntakeLiters || 4.0}L</strong> (
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-bold text-white">Meta de Hidratação Diária</h4>
+              {waterDrunkMl >= (nutritionPlan.waterIntakeLiters || 4.0) * 1000 && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                  Meta Atingida ✓
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-cyan-800 dark:text-cyan-300 font-mono mt-0.5">
+              Registrado: <strong className="text-cyan-950 dark:text-cyan-100 font-bold">{(waterDrunkMl / 1000).toFixed(1)}L</strong> de{' '}
+              <strong className="text-cyan-950 dark:text-cyan-100 font-bold">{nutritionPlan.waterIntakeLiters || 4.0}L</strong> (
               {Math.round(
                 (waterDrunkMl / ((nutritionPlan.waterIntakeLiters || 4.0) * 1000)) * 100
               )}
@@ -373,30 +380,38 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
 
         <div className="flex flex-wrap items-center gap-2">
           <button
+            type="button"
             onClick={() => addWater(250)}
-            className="px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-xs font-bold border border-cyan-500/30 transition"
+            className="px-3.5 py-2 min-h-[44px] rounded-xl bg-cyan-100 hover:bg-cyan-200 dark:bg-cyan-500/20 dark:hover:bg-cyan-500/30 text-cyan-900 dark:text-cyan-200 text-xs font-bold border border-cyan-300 dark:border-cyan-500/30 transition shadow-sm active:scale-95"
+            aria-label="Adicionar 250 mililitros de água"
           >
             +250ml
           </button>
           <button
+            type="button"
             onClick={() => addWater(500)}
-            className="px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-xs font-bold border border-cyan-500/30 transition"
+            className="px-3.5 py-2 min-h-[44px] rounded-xl bg-cyan-100 hover:bg-cyan-200 dark:bg-cyan-500/20 dark:hover:bg-cyan-500/30 text-cyan-900 dark:text-cyan-200 text-xs font-bold border border-cyan-300 dark:border-cyan-500/30 transition shadow-sm active:scale-95"
+            aria-label="Adicionar 500 mililitros de água"
           >
             +500ml
           </button>
           <button
+            type="button"
             onClick={() => addWater(1000)}
-            className="px-3 py-1.5 rounded-xl bg-cyan-600/40 hover:bg-cyan-600/60 text-white text-xs font-bold border border-cyan-400/40 transition shadow-lg"
+            className="px-3.5 py-2 min-h-[44px] rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-black border border-cyan-400/40 transition shadow-lg active:scale-95 flex items-center gap-1.5"
+            aria-label="Adicionar 1 litro de água garrafa"
           >
             +1.0L Garrafa
           </button>
           {waterDrunkMl > 0 && (
             <button
+              type="button"
               onClick={resetWater}
-              className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition text-xs"
+              className="p-2 min-h-[44px] min-w-[44px] rounded-xl bg-slate-200/80 hover:bg-slate-300 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white transition flex items-center justify-center border border-slate-300 dark:border-white/10"
               title="Zerar registro de água"
+              aria-label="Zerar registro de hidratação"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
+              <RotateCcw className="w-4 h-4" />
             </button>
           )}
         </div>
@@ -491,10 +506,10 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
                     <span className="text-base font-black text-white font-mono">
                       {meal.targetCaloriesKcal} kcal
                     </span>
-                    <div className="flex items-center gap-2 text-[11px] text-slate-300 font-mono mt-0.5">
-                      <span className="text-blue-400 font-semibold">{meal.targetProteinG}g P</span>
-                      <span className="text-amber-400 font-semibold">{meal.targetCarbsG}g C</span>
-                      <span className="text-rose-400 font-semibold">{meal.targetFatG}g G</span>
+                    <div className="flex items-center gap-2 text-[11px] font-mono mt-0.5">
+                      <span className="text-blue-700 dark:text-blue-400 font-bold">{meal.targetProteinG}g P</span>
+                      <span className="text-amber-800 dark:text-amber-400 font-bold">{meal.targetCarbsG}g C</span>
+                      <span className="text-rose-700 dark:text-rose-400 font-bold">{meal.targetFatG}g G</span>
                     </div>
                   </div>
 
@@ -595,10 +610,10 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
                                 <span className="font-extrabold text-white font-mono">
                                   {food.caloriesKcal} kcal
                                 </span>
-                                <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono mt-0.5">
-                                  <span className="text-blue-300">{food.proteinG}g P</span>
-                                  <span className="text-amber-300">{food.carbsG}g C</span>
-                                  <span className="text-rose-300">{food.fatG}g G</span>
+                                <div className="flex items-center gap-1.5 text-[10px] font-mono mt-0.5">
+                                  <span className="text-blue-700 dark:text-blue-300 font-bold">{food.proteinG}g P</span>
+                                  <span className="text-amber-800 dark:text-amber-300 font-bold">{food.carbsG}g C</span>
+                                  <span className="text-rose-700 dark:text-rose-300 font-bold">{food.fatG}g G</span>
                                 </div>
                               </div>
 
@@ -609,7 +624,7 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
                                     soundFx.playClick();
                                     onOpenSubstitution(food);
                                   }}
-                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/35 text-emerald-300 text-xs font-bold border border-emerald-500/30 transition shadow-sm"
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-600/20 dark:hover:bg-emerald-600/35 text-emerald-950 dark:text-emerald-300 text-xs font-bold border border-emerald-300 dark:border-emerald-500/30 transition shadow-sm"
                                   title="Calcular substituição inteligente para este alimento"
                                 >
                                   <RefreshCw className="w-3.5 h-3.5" />

@@ -405,16 +405,22 @@ export default function App() {
     }, 6000);
   };
 
+  // Centralized check for user maintenance and administration privileges
+  const canAccessAdmin = currentRole === 'admin' || currentRole === 'coach' || userSessionType === 'prescriber' || Boolean(currentPrescriber?.isAdmin);
+
   // Navigation handler with URL hash sync, document.title, and accessible focus management
   const handleSelectModule = (mod: ModuleType) => {
-    if (mod === 'coach_admin' && userSessionType !== 'prescriber') {
-      showToast('Acesso Restrito', 'O Painel do Treinador é exclusivo para a equipe clínica LM Team.');
+    if (mod === 'coach_admin' && !canAccessAdmin) {
+      showToast('Acesso Restrito', 'O Painel de Manutenção de Usuários e Administração é exclusivo para a equipe clínica e administradores.');
       return;
     }
     setActiveModule(mod);
     const targetHash = getHashForModule(mod);
-    if (typeof window !== 'undefined' && window.location.hash !== targetHash) {
-      window.history.pushState(null, '', targetHash);
+    if (typeof window !== 'undefined') {
+      if (window.location.hash !== targetHash) {
+        window.history.pushState(null, '', targetHash);
+      }
+      window.scrollTo({ top: 0, behavior: 'instant' });
     }
     if (typeof document !== 'undefined') {
       document.title = getDocumentTitle(mod);
@@ -435,15 +441,17 @@ export default function App() {
         return;
       }
 
-      if (mod === 'coach_admin' && userSessionType !== 'prescriber') {
+      if (mod === 'coach_admin' && !canAccessAdmin) {
         setActiveModule('dashboard');
         window.history.replaceState(null, '', '#dashboard');
         document.title = getDocumentTitle('dashboard');
+        window.scrollTo({ top: 0, behavior: 'instant' });
         return;
       }
 
       setActiveModule(mod);
       document.title = getDocumentTitle(mod);
+      window.scrollTo({ top: 0, behavior: 'instant' });
       mainContentRef.current?.focus({ preventScroll: true });
     };
 
@@ -454,7 +462,7 @@ export default function App() {
       window.removeEventListener('hashchange', handleHashSync);
       window.removeEventListener('popstate', handleHashSync);
     };
-  }, [isAuthenticated, userSessionType]);
+  }, [isAuthenticated, userSessionType, canAccessAdmin]);
 
   // Audio & Rest Timer Visual Equivalent Listener (toast triggered even if audio muted)
   useEffect(() => {
@@ -1122,7 +1130,7 @@ export default function App() {
       localStorage.setItem('lm_team_session_type', 'prescriber');
     } catch {}
     setCurrentPrescriber(prescriber);
-    setCurrentRole('coach');
+    setCurrentRole(prescriber.isAdmin ? 'admin' : 'coach');
     setIsAuthenticated(true);
     const targetModule = intendedModuleRef.current || 'coach_admin';
     intendedModuleRef.current = null;
@@ -1177,7 +1185,7 @@ export default function App() {
   // If not authenticated, display the Student Login screen
   if (!isAuthenticated) {
     return (
-      <div className={`min-h-screen ${theme === 'light' ? 'bg-[#f1f5f9] text-slate-900' : 'bg-[#070a13] text-slate-100'} selection:bg-cyan-500 selection:text-white flex flex-col justify-center transition-colors duration-300`}>
+      <div className={`min-h-screen ${theme === 'light' ? 'light-theme bg-[#f1f5f9] text-slate-900' : 'dark bg-[#070a13] text-slate-100'} selection:bg-cyan-500 selection:text-white flex flex-col justify-center transition-colors duration-300`}>
         <React.Suspense fallback={<ViewSuspenseFallback />}>
           <LoginView
             athletesList={athletesList}
@@ -1230,7 +1238,7 @@ export default function App() {
   }
 
   return (
-    <div className={`min-h-screen ${theme === 'light' ? 'bg-[#f8fafc] text-slate-900' : 'bg-[#070a13] text-slate-100'} selection:bg-blue-600 selection:text-white flex flex-row transition-colors duration-300`}>
+    <div className={`min-h-screen ${theme === 'light' ? 'light-theme bg-[#f8fafc] text-slate-900' : 'dark bg-[#070a13] text-slate-100'} selection:bg-blue-600 selection:text-white flex flex-row transition-colors duration-300`}>
       {/* Accessibility Skip Link */}
       <a href="#main-content" className="skip-link">
         Pular para o conteúdo principal
@@ -1241,6 +1249,8 @@ export default function App() {
         activeModule={activeModule}
         onSelectModule={handleSelectModule}
         currentRole={currentRole}
+        canSwitchRole={canAccessAdmin}
+        canAccessAdmin={canAccessAdmin}
         currentAthlete={currentAthlete}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={handleToggleSidebar}
@@ -1261,7 +1271,9 @@ export default function App() {
         {/* Top Header */}
         <Header
           currentRole={currentRole}
-          canSwitchAthlete={userSessionType === 'prescriber'}
+          canSwitchAthlete={userSessionType === 'prescriber' || canAccessAdmin}
+          canAccessAdmin={canAccessAdmin}
+          onSelectModule={handleSelectModule}
           activeModule={activeModule}
           currentAthlete={currentAthlete}
           athletesList={athletesList}
@@ -1472,6 +1484,7 @@ export default function App() {
               <CoachView
                 athletesList={athletesList}
                 currentAthlete={currentAthlete}
+                currentRole={currentRole}
                 onSelectAthlete={handleSelectAthlete}
                 onAddAthlete={handleAddAthlete}
                 onUpdateAthlete={handleUpdateAthlete}
@@ -1506,7 +1519,7 @@ export default function App() {
         activeModule={activeModule}
         onSelectModule={handleSelectModule}
         currentRole={currentRole}
-        canAccessAdmin={userSessionType === 'prescriber'}
+        canAccessAdmin={canAccessAdmin}
         theme={theme}
       />
 
@@ -1518,7 +1531,8 @@ export default function App() {
         athletesList={athletesList}
         onSelectAthlete={handleSelectAthlete}
         currentRole={currentRole}
-        canSwitchAthlete={userSessionType === 'prescriber'}
+        canSwitchAthlete={userSessionType === 'prescriber' || canAccessAdmin}
+        canAccessAdmin={canAccessAdmin}
         theme={theme}
         onToggleTheme={handleToggleTheme}
         onOpenReportModal={() => setIsPdfReportOpen(true)}

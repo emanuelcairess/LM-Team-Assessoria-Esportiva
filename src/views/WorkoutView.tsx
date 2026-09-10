@@ -428,7 +428,7 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
       {/* Top Prescriber Control Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 sm:p-4 rounded-3xl liquid-glass border border-white/10 bg-black/40">
         <div className="flex items-center gap-2">
-          <span className="text-[10px] uppercase font-black tracking-wider px-2.5 py-1 rounded-xl bg-orange-600/30 text-orange-300 border border-orange-500/40 flex items-center gap-1.5">
+          <span className="text-[10px] uppercase font-black tracking-wider px-2.5 py-1 rounded-xl bg-orange-500/20 text-orange-950 dark:text-orange-300 border border-orange-400/40 flex items-center gap-1.5">
             <Layers className="w-3.5 h-3.5" />
             Periodização Semanal: {workoutSplits.length}/7 Dias Prescritos
           </span>
@@ -454,10 +454,10 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
           {/* Edit Current Day */}
           <button
             onClick={handleOpenEditSplit}
-            className="px-3.5 py-2 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold transition flex items-center gap-1.5 border border-white/10"
+            className="px-3.5 py-2 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/15 text-slate-800 dark:text-white text-xs font-bold transition flex items-center gap-1.5 border border-slate-300 dark:border-white/10"
             title="Alterar prescrição, exercícios e cardio deste dia"
           >
-            <Edit className="w-3.5 h-3.5 text-orange-400" />
+            <Edit className="w-3.5 h-3.5 text-orange-500 dark:text-orange-400" />
             <span>Alterar Prescrição</span>
           </button>
 
@@ -467,10 +467,10 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
               soundFx.playClick();
               setIsTemplateModalOpen(true);
             }}
-            className="px-3.5 py-2 rounded-2xl bg-gradient-to-r from-amber-600/30 to-orange-600/30 hover:from-amber-600/50 hover:to-orange-600/50 text-amber-300 text-xs font-bold transition flex items-center gap-1.5 border border-amber-500/40 shadow-sm"
+            className="px-3.5 py-2 rounded-2xl bg-amber-100 hover:bg-amber-200 dark:bg-gradient-to-r dark:from-amber-600/30 dark:to-orange-600/30 dark:hover:from-amber-600/50 dark:hover:to-orange-600/50 text-amber-950 dark:text-amber-300 text-xs font-bold transition flex items-center gap-1.5 border border-amber-300 dark:border-amber-500/40 shadow-sm"
             title="Biblioteca de Modelos & Templates Oficiais LM"
           >
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <Sparkles className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
             <span>Templates</span>
           </button>
 
@@ -480,10 +480,10 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
               soundFx.playClick();
               setIsExerciseBankModalOpen(true);
             }}
-            className="px-3.5 py-2 rounded-2xl bg-gradient-to-r from-orange-600/30 to-rose-600/30 hover:from-orange-600/50 hover:to-rose-600/50 text-orange-200 text-xs font-bold transition flex items-center gap-1.5 border border-orange-500/40 shadow-sm"
+            className="px-3.5 py-2 rounded-2xl bg-orange-100 hover:bg-orange-200 dark:bg-gradient-to-r dark:from-orange-600/30 dark:to-rose-600/30 dark:hover:from-orange-600/50 dark:hover:to-rose-600/50 text-orange-950 dark:text-orange-200 text-xs font-bold transition flex items-center gap-1.5 border border-orange-300 dark:border-orange-500/40 shadow-sm"
             title="Banco de Exercícios Cadastrados da Assessoria"
           >
-            <BookOpen className="w-3.5 h-3.5 text-orange-400" />
+            <BookOpen className="w-3.5 h-3.5 text-orange-600 dark:text-orange-400" />
             <span>Banco de Exercícios ({exerciseLibrary.length})</span>
           </button>
 
@@ -491,7 +491,7 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
           {workoutSplits.length > 1 && (
             <button
               onClick={handleOpenDeleteSplit}
-              className="p-2 rounded-2xl bg-rose-950/30 hover:bg-rose-900/50 text-rose-400 hover:text-rose-300 transition border border-rose-500/20"
+              className="p-2 rounded-2xl bg-rose-100 hover:bg-rose-200 dark:bg-rose-950/30 dark:hover:bg-rose-900/50 text-rose-800 dark:text-rose-400 hover:text-rose-900 dark:hover:text-rose-300 transition border border-rose-300 dark:border-rose-500/20"
               title="Excluir este dia da periodização"
             >
               <Trash2 className="w-4 h-4" />
@@ -539,7 +539,7 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
                     : isSplitCardioOnly
                     ? 'bg-gradient-to-r from-teal-700 to-emerald-700 text-white border-teal-300 shadow-xl shadow-teal-950/60 scale-[1.02]'
                     : 'bg-gradient-to-r from-orange-600 to-amber-600 text-white border-orange-300 shadow-xl shadow-orange-950/60 scale-[1.02]'
-                  : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10 hover:border-white/20'
+                  : 'bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-white/10 hover:border-slate-400 dark:hover:border-white/20'
               }`}
             >
               <div

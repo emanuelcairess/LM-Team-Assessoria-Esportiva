@@ -24,6 +24,7 @@ interface WebSidebarProps {
   currentRole: UserRole;
   onRoleToggle?: () => void;
   canSwitchRole?: boolean;
+  canAccessAdmin?: boolean;
   currentAthlete: AthleteProfile;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
@@ -44,6 +45,7 @@ export const WebSidebar: React.FC<WebSidebarProps> = ({
   onSelectModule,
   currentRole,
   canSwitchRole = false,
+  canAccessAdmin = false,
   currentAthlete,
   isCollapsed,
   onToggleCollapse,
@@ -57,6 +59,9 @@ export const WebSidebar: React.FC<WebSidebarProps> = ({
   onTriggerSync
 }) => {
   const isLight = theme === 'light';
+
+  // Check if current user is allowed to access user maintenance / administration
+  const isUserAdminOrCoach = canAccessAdmin || currentRole === 'admin' || currentRole === 'coach' || (canSwitchRole && (currentRole === 'coach' || currentRole === 'admin'));
 
   // Standard modules to display in sidebar (excluding coach_admin which is conditionally shown)
   const sidebarItems = NAVIGATION_DESTINATIONS.filter(
@@ -291,10 +296,11 @@ export const WebSidebar: React.FC<WebSidebarProps> = ({
           );
         })}
 
-        {/* Coach Admin View - Only for Prescribers/Admins */}
-        {canSwitchRole && currentRole === 'coach' && (
+        {/* User Maintenance & Admin View - Visible to Administrators and Prescribers */}
+        {isUserAdminOrCoach && (
           <button
             type="button"
+            id="sidebar-nav-user-maintenance"
             aria-current={activeModule === 'coach_admin' ? 'page' : undefined}
             onClick={() => {
               soundFx.playClick();
@@ -309,7 +315,7 @@ export const WebSidebar: React.FC<WebSidebarProps> = ({
                 ? 'text-indigo-700 hover:text-indigo-950 hover:bg-indigo-50/50'
                 : 'text-indigo-400 hover:text-indigo-200 hover:bg-indigo-950/30'
             }`}
-            title="Painel Clínico & Gestão de Atletas (Tecla 8)"
+            title="Manutenção de Usuários (Alunos & Equipe) (Tecla 8)"
           >
             {activeModule === 'coach_admin' && (
               <motion.div
@@ -325,9 +331,14 @@ export const WebSidebar: React.FC<WebSidebarProps> = ({
               <ShieldAlert className="w-5 h-5 text-indigo-500" aria-hidden="true" />
             </div>
             {!isCollapsed && (
-              <span className="relative z-10 text-xs truncate flex-1 text-left font-bold">
-                Painel do Treinador
-              </span>
+              <div className="relative z-10 flex-1 min-w-0 text-left">
+                <span className="block text-xs truncate font-bold">
+                  Manutenção de Usuários
+                </span>
+                <span className={`block text-[10px] truncate ${isLight ? 'text-indigo-600' : 'text-indigo-300/80'}`}>
+                  {currentRole === 'admin' ? 'Alunos, Equipe & Admin' : 'Alunos & Equipe'}
+                </span>
+              </div>
             )}
             {!isCollapsed && (
               <span className="relative z-10 px-1.5 py-0.5 rounded text-[10px] font-mono bg-indigo-500/20 text-indigo-400">

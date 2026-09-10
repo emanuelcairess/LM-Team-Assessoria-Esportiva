@@ -82,6 +82,7 @@ interface CoachViewProps {
   onUpdatePrescriber: (prescriber: PrescriberProfile) => void;
   onDeletePrescriber: (prescriberId: string) => void;
   onTogglePrescriberStatus: (prescriberId: string) => void;
+  currentRole?: import('../types').UserRole;
   onResetPassword?: (
     userId: string,
     newPassword: string,
@@ -93,6 +94,7 @@ interface CoachViewProps {
 export const CoachView: React.FC<CoachViewProps> = ({
   athletesList,
   currentAthlete,
+  currentRole,
   onSelectAthlete,
   onAddAthlete,
   onUpdateAthlete,
@@ -149,8 +151,8 @@ export const CoachView: React.FC<CoachViewProps> = ({
     isMaster?: boolean;
   } | null>(null);
 
-  const isCurrentUserAdmin = Boolean(currentPrescriber.isAdmin);
-  const isCurrentUserMaster = Boolean(currentPrescriber.isMaster || currentPrescriber.isAdmin);
+  const isCurrentUserAdmin = Boolean(currentPrescriber.isAdmin) || currentRole === 'admin';
+  const isCurrentUserMaster = Boolean(currentPrescriber.isMaster || isCurrentUserAdmin);
 
   // Filter athletes (Admin vê todos; Profissional vê estritamente seus alunos vinculados)
   const filteredAthletes = athletesList.filter((ath) => {
@@ -422,10 +424,10 @@ export const CoachView: React.FC<CoachViewProps> = ({
                     soundFx.playClick();
                     setIsAuditLogsModalOpen(true);
                   }}
-                  className="px-3.5 py-2.5 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 text-cyan-300 text-xs font-bold border border-cyan-500/30 shadow-lg transition flex items-center gap-1.5"
+                  className="px-3.5 py-2.5 rounded-2xl bg-cyan-100 hover:bg-cyan-200 dark:bg-slate-800/80 dark:hover:bg-slate-700/80 text-cyan-900 dark:text-cyan-300 text-xs font-bold border border-cyan-300 dark:border-cyan-500/30 shadow-lg transition flex items-center gap-1.5"
                   title="Visualizar Trilha de Auditoria e Governança do Backend"
                 >
-                  <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
+                  <ShieldCheck className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
                   <span className="hidden sm:inline">Auditoria</span>
                 </button>
               )}
@@ -441,11 +443,11 @@ export const CoachView: React.FC<CoachViewProps> = ({
                 className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
                   activeTab === 'athletes'
                     ? 'bg-indigo-600 text-white shadow-md'
-                    : 'text-slate-400 hover:text-white'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white'
                 }`}
               >
                 <Users className="w-3.5 h-3.5" />
-                <span>Alunos ({athletesList.length})</span>
+                <span>Manutenção de Alunos ({athletesList.length})</span>
               </button>
 
               <button
@@ -456,11 +458,11 @@ export const CoachView: React.FC<CoachViewProps> = ({
                 className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
                   activeTab === 'prescribers'
                     ? 'bg-indigo-600 text-white shadow-md'
-                    : 'text-slate-400 hover:text-white'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white'
                 }`}
               >
-                <Crown className="w-3.5 h-3.5 text-amber-400" />
-                <span>Equipe & Prescritores ({prescribersList.length})</span>
+                <Crown className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
+                <span>Manutenção da Equipe ({prescribersList.length})</span>
               </button>
 
               <button
@@ -471,7 +473,7 @@ export const CoachView: React.FC<CoachViewProps> = ({
                 className={`px-3.5 py-2 rounded-xl text-xs font-bold transition ${
                   activeTab === 'prescriptions'
                     ? 'bg-indigo-600 text-white shadow-md'
-                    : 'text-slate-400 hover:text-white'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white'
                 }`}
               >
                 Prescrições

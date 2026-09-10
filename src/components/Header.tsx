@@ -26,6 +26,9 @@ import {
   Search,
   Keyboard,
   KeyRound,
+  Crown,
+  ShieldAlert,
+  Users,
   X
 } from 'lucide-react';
 import { AthleteProfile, UserRole, ModuleType, CloudSyncStatus } from '../types';
@@ -37,6 +40,8 @@ interface HeaderProps {
   onRoleToggle?: () => void;
   canSwitchRole?: boolean;
   canSwitchAthlete?: boolean;
+  canAccessAdmin?: boolean;
+  onSelectModule?: (module: ModuleType) => void;
   activeModule: ModuleType;
   currentAthlete: AthleteProfile;
   athletesList: AthleteProfile[];
@@ -94,8 +99,8 @@ const MODULE_TITLES: Record<ModuleType, { title: string; subtitle: string; color
     color: '#E65100'
   },
   coach_admin: {
-    title: 'Painel Clínico & Treinador',
-    subtitle: 'Gestão de Atletas e Prescrições',
+    title: 'Manutenção de Usuários',
+    subtitle: 'Gestão de Alunos, Equipe Técnica & Auditoria',
     color: '#1e293b'
   }
 };
@@ -105,6 +110,8 @@ export const Header: React.FC<HeaderProps> = ({
   onRoleToggle,
   canSwitchRole = false,
   canSwitchAthlete = false,
+  canAccessAdmin = false,
+  onSelectModule,
   activeModule,
   currentAthlete,
   athletesList,
@@ -144,14 +151,14 @@ export const Header: React.FC<HeaderProps> = ({
 
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 sm:gap-2">
-              <h1 className="text-sm sm:text-base md:text-lg font-bold text-white tracking-tight leading-none truncate">
+              <h1 className="text-sm sm:text-base md:text-lg font-bold text-slate-900 dark:text-white tracking-tight leading-none truncate">
                 {moduleInfo.title}
               </h1>
-              <span className="hidden md:inline-flex px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider bg-white/10 text-slate-300 border border-white/10 shrink-0">
+              <span className="hidden md:inline-flex px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-white/10 shrink-0">
                 LM TEAM
               </span>
             </div>
-            <p className="text-[11px] sm:text-xs text-slate-400 truncate max-w-[140px] sm:max-w-[220px] md:max-w-xs mt-0.5">
+            <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate max-w-[140px] sm:max-w-[220px] md:max-w-xs mt-0.5">
               {moduleInfo.subtitle}
             </p>
           </div>
@@ -252,10 +259,10 @@ export const Header: React.FC<HeaderProps> = ({
                 onOpenRoomSchemaModal();
               }}
               className="hidden 2xl:flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-teal-500/10 hover:bg-teal-500/20 text-xs font-semibold text-teal-300 border border-teal-500/30 transition shadow"
-              title="Estrutura de Dados & Room Entities"
+              title="Banco de Dados Local & Sincronização em Nuvem"
             >
               <Database className="w-3.5 h-3.5 text-teal-400" />
-              <span>Room & Sync</span>
+              <span>Sincronização</span>
             </button>
           )}
 
@@ -304,27 +311,53 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </button>
 
-          {/* User Role Indicator Badge (Informational only - switching roles requires re-login) */}
-          <div
-            className={`hidden sm:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-2xl text-xs font-bold shadow-md border shrink-0 ${
-              currentRole === 'coach'
-                ? 'bg-gradient-to-r from-indigo-700/80 to-purple-800/80 text-white border-indigo-500/40 shadow-indigo-900/30'
-                : 'bg-emerald-600/20 text-emerald-300 border-emerald-500/30 shadow-emerald-950/20'
-            }`}
-            title={currentRole === 'coach' ? 'Sessão Profissional (Treinador/Admin)' : 'Sessão do Aluno'}
-          >
-            {currentRole === 'coach' ? (
-              <>
-                <ShieldCheck className="w-3.5 h-3.5 text-indigo-300 shrink-0" />
-                <span>Painel Profissional</span>
-              </>
-            ) : (
-              <>
-                <UserCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span>Portal do Aluno</span>
-              </>
-            )}
-          </div>
+          {/* User Role Indicator Badge */}
+          {currentRole === 'admin' ? (
+            <div
+              className="hidden sm:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-2xl text-xs font-bold shadow-md border shrink-0 bg-gradient-to-r from-amber-600/30 via-purple-700/30 to-indigo-700/30 text-amber-300 border-amber-500/40 shadow-indigo-900/30"
+              title="Sessão de Administrador Geral (Acesso Total ao Sistema)"
+            >
+              <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span>Administrador Geral</span>
+            </div>
+          ) : currentRole === 'coach' ? (
+            <div
+              className="hidden sm:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-2xl text-xs font-bold shadow-md border shrink-0 bg-gradient-to-r from-indigo-700/80 to-purple-800/80 text-white border-indigo-500/40 shadow-indigo-900/30"
+              title="Sessão Profissional (Treinador/Prescritor)"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-indigo-300 shrink-0" />
+              <span>Painel Profissional</span>
+            </div>
+          ) : (
+            <div
+              className="hidden sm:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-2xl text-xs font-bold shadow-md border shrink-0 bg-emerald-600/20 text-emerald-300 border-emerald-500/30 shadow-emerald-950/20"
+              title="Sessão do Aluno"
+            >
+              <UserCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span>Portal do Aluno</span>
+            </div>
+          )}
+
+          {/* Direct User Maintenance Header Button for Admins/Prescribers */}
+          {canAccessAdmin && onSelectModule && (
+            <button
+              id="header-nav-user-maintenance"
+              onClick={() => {
+                soundFx.playClick();
+                onSelectModule('coach_admin');
+              }}
+              className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-bold transition shadow-sm border ${
+                activeModule === 'coach_admin'
+                  ? 'bg-indigo-600 text-white border-indigo-400 shadow-indigo-950/40 ring-1 ring-white/20'
+                  : 'bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-700 dark:text-indigo-300 border-indigo-500/30'
+              }`}
+              title="Acessar painel de manutenção de usuários (alunos e equipe)"
+            >
+              <ShieldAlert className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400 shrink-0" />
+              <span className="hidden xl:inline">Manutenção de Usuários</span>
+              <span className="xl:hidden">Usuários</span>
+            </button>
+          )}
 
           {/* Athlete Profile / Selector Chip */}
           <div className="relative">
@@ -342,20 +375,20 @@ export const Header: React.FC<HeaderProps> = ({
                 alt={currentAthlete.name}
                 className="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover ring-1 ring-cyan-400/40 shrink-0"
               />
-              <span className="hidden sm:inline text-xs font-bold text-white max-w-[80px] lg:max-w-[120px] truncate">
+              <span className="hidden sm:inline text-xs font-bold text-slate-900 dark:text-white max-w-[80px] lg:max-w-[120px] truncate">
                 {currentAthlete.name.split(' ')[0]}
               </span>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-white transition shrink-0" />
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition shrink-0" />
             </button>
 
             {/* Athlete Dropdown */}
             {showAthleteDropdown && (
-              <div className="absolute right-0 mt-2 w-72 rounded-3xl liquid-glass border border-white/15 shadow-2xl p-2.5 z-50 animate-in fade-in zoom-in-95 duration-150 bg-slate-900/95">
+              <div className="absolute right-0 mt-2 w-72 rounded-3xl liquid-glass border border-slate-200 dark:border-white/15 shadow-2xl p-2.5 z-50 animate-in fade-in zoom-in-95 duration-150 bg-white dark:bg-slate-900/95">
                 {canSwitchAthlete ? (
                   <>
-                    <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between">
-                      <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Atletas Cadastrados</p>
-                      <span className="text-[10px] font-mono text-cyan-400">ID = WhatsApp</span>
+                    <div className="px-3 py-2 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
+                      <p className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">Atletas Cadastrados</p>
+                      <span className="text-[10px] font-mono text-cyan-600 dark:text-cyan-400">ID = WhatsApp</span>
                     </div>
                     <div className="py-1 space-y-1 max-h-60 overflow-y-auto">
                       {athletesList.map((ath) => (
@@ -368,17 +401,17 @@ export const Header: React.FC<HeaderProps> = ({
                           }}
                           className={`w-full flex items-center gap-2.5 p-2 rounded-xl text-left transition ${
                             currentAthlete.id === ath.id
-                              ? 'bg-blue-600/30 text-white border border-blue-500/40'
-                              : 'hover:bg-white/5 text-slate-300'
+                              ? 'bg-blue-600/20 dark:bg-blue-600/30 text-blue-900 dark:text-white border border-blue-500/40 font-bold'
+                              : 'hover:bg-slate-100 dark:hover:bg-white/5 text-slate-800 dark:text-slate-300'
                           }`}
                         >
                           <img src={ath.avatar} alt={ath.name} className="w-8 h-8 rounded-full object-cover shrink-0" />
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs font-bold truncate">{ath.name}</p>
-                            <p className="text-[10px] text-slate-400 font-mono">{ath.phone || '(11) 98765-4321'}</p>
+                            <p className="text-xs font-bold truncate text-slate-900 dark:text-white">{ath.name}</p>
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">{ath.phone || '(11) 98765-4321'}</p>
                           </div>
                           {currentAthlete.id === ath.id && (
-                            <span className="w-2 h-2 rounded-full bg-blue-400 shrink-0" />
+                            <span className="w-2 h-2 rounded-full bg-blue-500 dark:bg-blue-400 shrink-0" />
                           )}
                         </button>
                       ))}
@@ -386,23 +419,40 @@ export const Header: React.FC<HeaderProps> = ({
                   </>
                 ) : (
                   <div className="p-2 space-y-3">
-                    <div className="flex items-center gap-3 pb-2 border-b border-white/10">
+                    <div className="flex items-center gap-3 pb-2 border-b border-slate-200 dark:border-white/10">
                       <img
                         src={currentAthlete.avatar}
                         alt={currentAthlete.name}
                         className="w-10 h-10 rounded-full object-cover ring-2 ring-cyan-400/40"
                       />
                       <div className="min-w-0 flex-1">
-                        <p className="text-xs font-bold text-white truncate">{currentAthlete.name}</p>
-                        <p className="text-[10px] text-cyan-400 font-mono truncate">{currentAthlete.phone || 'Aluno Team LM'}</p>
-                        <p className="text-[10px] text-slate-400 truncate">{currentAthlete.category} • {currentAthlete.goal}</p>
+                        <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{currentAthlete.name}</p>
+                        <p className="text-[10px] text-cyan-600 dark:text-cyan-400 font-mono truncate">{currentAthlete.phone || 'Aluno Team LM'}</p>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{currentAthlete.category} • {currentAthlete.goal}</p>
                       </div>
                     </div>
                   </div>
                 )}
 
+                {canAccessAdmin && onSelectModule && (
+                  <div className="pt-2 border-t border-slate-200 dark:border-white/10">
+                    <button
+                      id="dropdown-user-maintenance"
+                      onClick={() => {
+                        soundFx.playClick();
+                        setShowAthleteDropdown(false);
+                        onSelectModule('coach_admin');
+                      }}
+                      className="w-full flex items-center justify-center gap-2 p-2 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 text-xs font-bold transition mb-1"
+                    >
+                      <ShieldAlert className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>Manutenção de Usuários (Painel)</span>
+                    </button>
+                  </div>
+                )}
+
                 {onOpenChangePassword && (
-                  <div className="pt-2 border-t border-white/10">
+                  <div className={`pt-2 ${canAccessAdmin ? '' : 'border-t border-white/10'}`}>
                     <button
                       onClick={() => {
                         soundFx.playClick();
@@ -418,7 +468,7 @@ export const Header: React.FC<HeaderProps> = ({
                 )}
 
                 {onLogout && (
-                  <div className={`pt-2 ${onOpenChangePassword ? '' : 'mt-1 border-t border-white/10'}`}>
+                  <div className={`pt-2 ${onOpenChangePassword || canAccessAdmin ? '' : 'mt-1 border-t border-white/10'}`}>
                     <button
                       onClick={() => {
                         soundFx.playClick();
@@ -452,10 +502,25 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Quick Actions Dropdown */}
             {showQuickMenu && (
-              <div className="absolute right-0 mt-2 w-64 rounded-3xl liquid-glass border border-white/15 shadow-2xl p-2.5 z-50 animate-in fade-in zoom-in-95 duration-150 bg-slate-900/95 space-y-1">
-                <div className="px-3 py-1.5 border-b border-white/10">
-                  <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Ações Rápidas</p>
+              <div className="absolute right-0 mt-2 w-64 rounded-3xl liquid-glass border border-slate-200 dark:border-white/15 shadow-2xl p-2.5 z-50 animate-in fade-in zoom-in-95 duration-150 bg-white dark:bg-slate-900/95 space-y-1">
+                <div className="px-3 py-1.5 border-b border-slate-200 dark:border-white/10">
+                  <p className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">Ações Rápidas</p>
                 </div>
+
+                {canAccessAdmin && onSelectModule && (
+                  <button
+                    id="quick-menu-user-maintenance"
+                    onClick={() => {
+                      soundFx.playClick();
+                      setShowQuickMenu(false);
+                      onSelectModule('coach_admin');
+                    }}
+                    className="w-full flex items-center gap-2.5 p-2 rounded-xl text-left text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 transition border border-indigo-500/25"
+                  >
+                    <ShieldAlert className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                    <span>Manutenção de Usuários & Equipe</span>
+                  </button>
+                )}
 
                 {onOpenKeyboardShortcuts && (
                   <button
@@ -464,9 +529,9 @@ export const Header: React.FC<HeaderProps> = ({
                       setShowQuickMenu(false);
                       onOpenKeyboardShortcuts();
                     }}
-                    className="w-full flex items-center gap-2.5 p-2 rounded-xl text-left text-xs font-semibold text-indigo-300 hover:bg-white/5 transition"
+                    className="w-full flex items-center gap-2.5 p-2 rounded-xl text-left text-xs font-semibold text-indigo-700 dark:text-indigo-300 hover:bg-slate-100 dark:hover:bg-white/5 transition"
                   >
-                    <Keyboard className="w-4 h-4 text-indigo-400 shrink-0" />
+                    <Keyboard className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
                     <span>Atalhos de Teclado (?)</span>
                   </button>
                 )}
@@ -478,9 +543,9 @@ export const Header: React.FC<HeaderProps> = ({
                       setShowQuickMenu(false);
                       onOpenInstallAppModal();
                     }}
-                    className="w-full flex items-center gap-2.5 p-2 rounded-xl text-left text-xs font-semibold text-cyan-300 hover:bg-white/5 transition"
+                    className="w-full flex items-center gap-2.5 p-2 rounded-xl text-left text-xs font-semibold text-cyan-700 dark:text-cyan-300 hover:bg-slate-100 dark:hover:bg-white/5 transition"
                   >
-                    <Smartphone className="w-4 h-4 text-cyan-400 shrink-0" />
+                    <Smartphone className="w-4 h-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
                     <span>Instalar no Celular (PWA)</span>
                   </button>
                 )}
@@ -491,9 +556,9 @@ export const Header: React.FC<HeaderProps> = ({
                     setShowQuickMenu(false);
                     onOpenReportModal();
                   }}
-                  className="w-full flex items-center gap-2.5 p-2 rounded-xl text-left text-xs font-semibold text-slate-200 hover:bg-white/5 transition"
+                  className="w-full flex items-center gap-2.5 p-2 rounded-xl text-left text-xs font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5 transition"
                 >
-                  <FileText className="w-4 h-4 text-blue-400 shrink-0" />
+                  <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
                   <span>Visualizar Laudo PDF</span>
                 </button>
 
@@ -504,9 +569,9 @@ export const Header: React.FC<HeaderProps> = ({
                       setShowQuickMenu(false);
                       onOpenRoomSchemaModal();
                     }}
-                    className="w-full flex items-center gap-2.5 p-2 rounded-xl text-left text-xs font-semibold text-teal-300 hover:bg-white/5 transition"
+                    className="w-full flex items-center gap-2.5 p-2 rounded-xl text-left text-xs font-semibold text-teal-700 dark:text-teal-300 hover:bg-slate-100 dark:hover:bg-white/5 transition"
                   >
-                    <Database className="w-4 h-4 text-teal-400 shrink-0" />
+                    <Database className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
                     <span>Room & Sync Database</span>
                   </button>
                 )}

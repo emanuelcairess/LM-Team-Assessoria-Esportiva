@@ -122,7 +122,7 @@ export const RoomSchemaModal: React.FC<RoomSchemaModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h2 id="room-schema-title" className="text-base sm:text-lg font-bold text-white tracking-tight">
-                  Arquitetura Offline-First & Room Database
+                  Banco de Dados Local & Sincronização em Nuvem
                 </h2>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30">
                   Room 2.6+ ⇄ {cloudProvider}
@@ -148,7 +148,7 @@ export const RoomSchemaModal: React.FC<RoomSchemaModalProps> = ({
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Modelos & DAOs
+                Entidades de Dados
               </button>
               <button
                 onClick={() => {
@@ -161,7 +161,7 @@ export const RoomSchemaModal: React.FC<RoomSchemaModalProps> = ({
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Fluxo de Sync
+                Fluxo de Sincronização
               </button>
               <button
                 onClick={() => {
@@ -174,7 +174,7 @@ export const RoomSchemaModal: React.FC<RoomSchemaModalProps> = ({
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                <span>Fila de Sync</span>
+                <span>Fila de Sincronização</span>
                 {syncStatus && syncStatus.pendingCount > 0 && (
                   <span className="w-4 h-4 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black flex items-center justify-center">
                     {syncStatus.pendingCount}

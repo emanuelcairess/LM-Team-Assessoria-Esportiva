@@ -260,7 +260,7 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ athlete, onOpenRepor
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
                   viewMode === 'slider'
                     ? 'bg-orange-600 text-white shadow-md'
-                    : 'text-slate-400 hover:text-white'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white'
                 }`}
               >
                 Slider Interativo
@@ -274,7 +274,7 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ athlete, onOpenRepor
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
                   viewMode === 'side_by_side'
                     ? 'bg-orange-600 text-white shadow-md'
-                    : 'text-slate-400 hover:text-white'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white'
                 }`}
               >
                 Lado a Lado
@@ -292,7 +292,7 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ athlete, onOpenRepor
               alt="Depois"
               className="absolute inset-0 w-full h-full object-cover"
             />
-            <span className="absolute top-4 right-4 z-10 px-3 py-1 rounded-full text-xs font-black bg-black/70 backdrop-blur-md text-emerald-400 border border-emerald-500/30">
+            <span className="absolute top-3 right-3 sm:top-4 sm:right-4 z-10 px-3 py-1 rounded-full text-xs font-black bg-black/80 backdrop-blur-md text-emerald-300 border border-emerald-500/40 shadow-lg">
               ATUAL (Ago/2026 - 79.8kg)
             </span>
 
@@ -307,7 +307,7 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ athlete, onOpenRepor
                 className="absolute inset-0 w-full h-full object-cover max-w-none"
                 style={{ width: '100%', minWidth: '100%' }}
               />
-              <span className="absolute top-4 left-4 z-10 px-3 py-1 rounded-full text-xs font-black bg-black/70 backdrop-blur-md text-slate-300 border border-white/20">
+              <span className="absolute top-3 left-3 sm:top-4 sm:left-4 z-10 px-3 py-1 rounded-full text-xs font-black bg-black/80 backdrop-blur-md text-slate-200 border border-white/30 shadow-lg">
                 INÍCIO (Jun/2026 - 77.2kg)
               </span>
             </div>
@@ -331,25 +331,26 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ athlete, onOpenRepor
               value={sliderPos}
               onChange={(e) => setSliderPos(Number(e.target.value))}
               className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize z-30"
+              aria-label="Controle deslizante de comparativo antes e depois"
             />
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="relative rounded-2xl overflow-hidden border border-white/10 h-80 bg-slate-950">
+            <div className="relative rounded-2xl overflow-hidden border border-white/10 h-80 sm:h-96 bg-slate-950" data-photo-overlay="true">
               <img src={beforePhoto} alt="Início" className="w-full h-full object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-end p-4">
-                <span className="text-[10px] font-bold uppercase text-slate-400">Avaliação Inicial</span>
+              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent flex flex-col justify-end p-4 sm:p-5">
+                <span className="text-[10px] font-bold uppercase text-slate-300">Avaliação Inicial</span>
                 <h4 className="text-base font-black text-white">15/06/2026 (77.2 kg • 11.2% BF)</h4>
-                <p className="text-xs text-slate-300">Cintura: 80.5cm • Braço: 39.8cm</p>
+                <p className="text-xs text-slate-200 mt-0.5">Cintura: 80.5cm • Braço: 39.8cm</p>
               </div>
             </div>
 
-            <div className="relative rounded-2xl overflow-hidden border border-emerald-500/30 h-80 bg-slate-950 shadow-xl shadow-emerald-950/20">
+            <div className="relative rounded-2xl overflow-hidden border border-emerald-500/30 h-80 sm:h-96 bg-slate-950 shadow-xl shadow-emerald-950/20" data-photo-overlay="true">
               <img src={afterPhoto} alt="Atual" className="w-full h-full object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-end p-4">
+              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent flex flex-col justify-end p-4 sm:p-5">
                 <span className="text-[10px] font-bold uppercase text-emerald-400">Avaliação Atual</span>
                 <h4 className="text-base font-black text-emerald-300">20/08/2026 (79.8 kg • 9.8% BF)</h4>
-                <p className="text-xs text-slate-200">Cintura: 78.0cm (-2.5cm) • Braço: 41.5cm (+1.7cm)</p>
+                <p className="text-xs text-slate-100 mt-0.5">Cintura: 78.0cm (-2.5cm) • Braço: 41.5cm (+1.7cm)</p>
               </div>
             </div>
           </div>

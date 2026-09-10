@@ -71,7 +71,7 @@ export function useGlobalShortcuts({
         e.preventDefault();
         soundFx.playClick();
         onSelectModule('progress');
-      } else if (e.key === '8' && userSessionType === 'prescriber' && currentRole === 'coach') {
+      } else if (e.key === '8' && (userSessionType === 'prescriber' || currentRole === 'admin' || currentRole === 'coach')) {
         e.preventDefault();
         soundFx.playClick();
         onSelectModule('coach_admin');

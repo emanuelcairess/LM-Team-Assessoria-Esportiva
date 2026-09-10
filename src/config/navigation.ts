@@ -128,9 +128,9 @@ export const NAVIGATION_DESTINATIONS: NavigationDestination[] = [
   },
   {
     id: 'coach_admin',
-    label: 'Painel do Treinador',
-    shortLabel: 'Atletas',
-    fullTitle: 'Painel Clínico & Gestão de Atletas',
+    label: 'Manutenção de Usuários',
+    shortLabel: 'Usuários',
+    fullTitle: 'Manutenção de Usuários • Alunos, Equipe & Admin',
     hash: '#coach_admin',
     icon: ShieldAlert,
     accentColor: '#818cf8',
@@ -138,7 +138,7 @@ export const NAVIGATION_DESTINATIONS: NavigationDestination[] = [
     bgColor: 'rgba(49, 46, 129, 0.5)',
     lightBgColor: 'rgba(79, 70, 229, 0.12)',
     shortcut: '8',
-    description: 'Gestão da equipe de atletas, liberação de planos e auditoria',
+    description: 'Manutenção e gestão de usuários (alunos e equipe), permissões, senhas e auditoria',
     requiresPrescriber: true
   }
 ];
