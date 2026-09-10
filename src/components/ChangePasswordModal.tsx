@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { soundFx } from '../utils/audio';
 import { adminService } from '../services/adminService';
+import { useAccessibleModal } from '../hooks/useAccessibleModal';
 
 interface ChangePasswordModalProps {
   isOpen: boolean;
@@ -147,9 +148,11 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
     }
   };
 
+  const { modalRef } = useAccessibleModal({ isOpen, onClose: handleClose });
+
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto" role="presentation">
         {/* Backdrop */}
         <motion.div
           initial={{ opacity: 0 }}
@@ -161,26 +164,32 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
 
         {/* Modal Window */}
         <motion.div
+          ref={modalRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="change-password-title"
+          tabIndex={-1}
           initial={{ scale: 0.95, opacity: 0, y: 15 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.95, opacity: 0, y: 15 }}
-          className="relative w-full max-w-md rounded-3xl bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border border-white/20 shadow-2xl p-6 sm:p-7 z-10 my-8 overflow-hidden"
+          className="relative w-full max-w-md rounded-3xl bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border border-white/20 shadow-2xl p-6 sm:p-7 z-10 my-8 overflow-hidden focus:outline-none"
         >
           {/* Header */}
           <div className="flex items-start justify-between gap-3 pb-4 border-b border-white/10">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center shadow-lg shadow-amber-500/25 shrink-0">
-                <KeyRound className="w-5 h-5 text-white" />
+                <KeyRound className="w-5 h-5 text-white" aria-hidden="true" />
               </div>
               <div>
-                <h3 className="text-base font-black text-white">Alterar Minha Senha</h3>
+                <h3 id="change-password-title" className="text-base font-black text-white">Alterar Minha Senha</h3>
                 <p className="text-xs text-slate-400">Atualize sua credencial de acesso seguro</p>
               </div>
             </div>
             <button
               type="button"
               onClick={handleClose}
-              className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition"
+              aria-label="Fechar modal de alteração de senha"
+              className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition focus-visible:ring-2 focus-visible:ring-blue-500"
             >
               <X className="w-4 h-4" />
             </button>

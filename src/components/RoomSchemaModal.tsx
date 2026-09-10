@@ -34,6 +34,7 @@ import { ROOM_ENTITIES_DATA, RoomEntityMetadata } from '../models/roomSchema';
 import { CloudSyncStatus, PendingSyncItem } from '../types';
 import { soundFx } from '../utils/audio';
 import { syncService, SyncLogEntry, resolveFirestorePathForDomain } from '../services/syncService';
+import { useAccessibleModal } from '../hooks/useAccessibleModal';
 
 interface RoomSchemaModalProps {
   isOpen: boolean;
@@ -90,25 +91,37 @@ export const RoomSchemaModal: React.FC<RoomSchemaModalProps> = ({
     setTimeout(() => setCopiedText(false), 2000);
   };
 
+  const { modalRef } = useAccessibleModal({ isOpen, onClose });
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-xl overflow-y-auto">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-xl overflow-y-auto"
+      role="presentation"
+      onClick={onClose}
+    >
       <motion.div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="room-schema-title"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="relative w-full max-w-6xl rounded-3xl modal-liquid-glass border border-white/20 shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col"
+        className="relative w-full max-w-6xl rounded-3xl modal-liquid-glass border border-white/20 shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col focus:outline-none"
       >
         {/* Top Header Bar */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-slate-950/70 backdrop-blur-md">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-600 to-teal-400 p-0.5 shadow-lg shadow-blue-900/30 flex items-center justify-center">
               <div className="w-full h-full rounded-[14px] bg-slate-950 flex items-center justify-center text-teal-400">
-                <Database className="w-5 h-5" />
+                <Database className="w-5 h-5" aria-hidden="true" />
               </div>
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
+                <h2 id="room-schema-title" className="text-base sm:text-lg font-bold text-white tracking-tight">
                   Arquitetura Offline-First & Room Database
                 </h2>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30">

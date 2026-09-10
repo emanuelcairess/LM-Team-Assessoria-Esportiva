@@ -118,7 +118,6 @@ export const INITIAL_ATHLETE: AthleteProfile = {
   phone: '(11) 98765-4321',
   cpf: '123.456.789-00',
   birthDate: '1999-04-15',
-  password: '123456',
   age: 27,
   category: 'Avançado / Classic Physique',
   coachName: 'Dr. Lucas Mendes (Head Coach)',
@@ -204,7 +203,14 @@ export const INITIAL_ATHLETE: AthleteProfile = {
         back: 'https://images.unsplash.com/photo-1574680096145-d05b474e2155?w=600&auto=format&fit=crop&q=80',
         side: 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=600&auto=format&fit=crop&q=80'
       },
-      notes: 'Avaliação atual: Cintura reduziu e braços/peito expandiram com excelente densidade.'
+      notes: 'Avaliação atual: Cintura reduziu e braços/peito expandiram com excelente densidade.',
+      validatedBy: {
+        id: 'presc-med-01',
+        name: 'Dr. Rodrigo Albuquerque',
+        role: 'Médico do Esporte',
+        crm_crn_cref: 'CRM-SP 182490 / RQE 9201'
+      },
+      validatedAt: '2026-08-21'
     }
   ]
 };
@@ -219,7 +225,6 @@ export const OTHER_ATHLETES: AthleteProfile[] = [
     phone: '(11) 99123-4567',
     cpf: '234.567.890-11',
     birthDate: '1997-08-24',
-    password: '123456',
     age: 29,
     category: 'Wellness Master',
     coachName: 'Dr. Lucas Mendes (Head Coach)',
@@ -289,13 +294,13 @@ export const OTHER_ATHLETES: AthleteProfile[] = [
         leftThighCm: 62.1,
         calvesCm: 37.5,
         glutesCm: 105.5,
-        neckCm: 32.5,
+        neckCm: undefined, // Demonstração: medida não aferida (exibe 'Não informado')
         photos: {
           front: 'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=600&auto=format&fit=crop&q=80',
           back: 'https://images.unsplash.com/photo-1518611012118-696072aa579a?w=600&auto=format&fit=crop&q=80',
           side: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=600&auto=format&fit=crop&q=80'
         },
-        notes: 'Cintura afinada para 64.5cm e manutenção total do volume de membros inferiores.'
+        notes: 'Cintura afinada para 64.5cm e manutenção total do volume de membros inferiores. Pendente de validação médica formal.'
       }
     ]
   },
@@ -307,7 +312,6 @@ export const OTHER_ATHLETES: AthleteProfile[] = [
     phone: '(21) 98888-7777',
     cpf: '345.678.901-22',
     birthDate: '1994-11-03',
-    password: '123456',
     age: 32,
     category: 'Open Bodybuilding',
     coachName: 'Dr. Lucas Mendes (Head Coach)',
@@ -1802,3 +1806,393 @@ export const FOOD_SUBSTITUTIONS_DATABASE: FoodSubstitution[] = [
     ]
   }
 ];
+
+// ==============================================================================
+// PLANOS E PROTOCOLOS ISOLADOS PARA CAMILA RODRIGUES (ath-02 - Wellness Master)
+// ==============================================================================
+
+export const CAMILA_NUTRITION_PLAN: NutritionPlan = {
+  dailyTargetCalories: 1780,
+  dailyTargetProteinG: 138,
+  dailyTargetCarbsG: 185,
+  dailyTargetFatG: 40,
+  waterIntakeLiters: 3.5,
+  meals: [
+    {
+      id: 'cam-meal-1',
+      number: 1,
+      name: 'Refeição 1 (Café da Manhã Wellness)',
+      timeSchedule: '07:00',
+      targetProteinG: 28,
+      targetCarbsG: 35,
+      targetFatG: 6,
+      targetCaloriesKcal: 306,
+      isCompleted: true,
+      notes: 'Tomar Colágeno Verisol e Termogênico LM Burn ao acordar.',
+      foods: [
+        {
+          id: 'cf-1',
+          name: 'Panqueca de Claras com Aveia e Canela',
+          portion: '1 porção (180g)',
+          amountGrams: 180,
+          proteinG: 24,
+          carbsG: 28,
+          fatG: 4,
+          caloriesKcal: 244,
+          category: 'proteina',
+          isCompleted: true
+        },
+        {
+          id: 'cf-2',
+          name: 'Morangos Frescos Picados',
+          portion: '100g',
+          amountGrams: 100,
+          proteinG: 1,
+          carbsG: 7,
+          fatG: 0.3,
+          caloriesKcal: 32,
+          category: 'carboidrato',
+          isCompleted: true
+        }
+      ]
+    },
+    {
+      id: 'cam-meal-2',
+      number: 2,
+      name: 'Refeição 2 (Almoço Pré-Treino)',
+      timeSchedule: '12:00',
+      targetProteinG: 36,
+      targetCarbsG: 48,
+      targetFatG: 10,
+      targetCaloriesKcal: 426,
+      isCompleted: false,
+      notes: 'Mastigar devagar. Picolinato de cromo junto ao prato.',
+      foods: [
+        {
+          id: 'cf-3',
+          name: 'Filé de Tilápia Grelhado no Fio de Azeite',
+          portion: '150g',
+          amountGrams: 150,
+          proteinG: 34,
+          carbsG: 0,
+          fatG: 4,
+          caloriesKcal: 172,
+          category: 'proteina',
+          isCompleted: false
+        },
+        {
+          id: 'cf-4',
+          name: 'Batata Doce Assada com Alecrim',
+          portion: '160g',
+          amountGrams: 160,
+          proteinG: 2.5,
+          carbsG: 43,
+          fatG: 0.3,
+          caloriesKcal: 188,
+          category: 'carboidrato',
+          isCompleted: false
+        },
+        {
+          id: 'cf-5',
+          name: 'Salada de Folhas Verdes com Azeite Extravirgem',
+          portion: '1 prato fundo (100g)',
+          amountGrams: 100,
+          proteinG: 1.5,
+          carbsG: 4,
+          fatG: 5,
+          caloriesKcal: 67,
+          category: 'vegetal',
+          isCompleted: false
+        }
+      ]
+    },
+    {
+      id: 'cam-meal-3',
+      number: 3,
+      name: 'Refeição 3 (Shake Pós-Treino)',
+      timeSchedule: '16:00',
+      targetProteinG: 30,
+      targetCarbsG: 22,
+      targetFatG: 2,
+      targetCaloriesKcal: 226,
+      isCompleted: false,
+      notes: 'Bater com água bem gelada.',
+      foods: [
+        {
+          id: 'cf-6',
+          name: 'Whey Protein Isolado (IsoHydro)',
+          portion: '1 scoop (32g)',
+          amountGrams: 32,
+          proteinG: 27,
+          carbsG: 1.5,
+          fatG: 0.5,
+          caloriesKcal: 118,
+          category: 'proteina',
+          isCompleted: false
+        },
+        {
+          id: 'cf-7',
+          name: 'Frutas Vermelhas Congeladas (Blueberry/Amora)',
+          portion: '120g',
+          amountGrams: 120,
+          proteinG: 1,
+          carbsG: 16,
+          fatG: 0.4,
+          caloriesKcal: 71,
+          category: 'carboidrato',
+          isCompleted: false
+        }
+      ]
+    },
+    {
+      id: 'cam-meal-4',
+      number: 4,
+      name: 'Refeição 4 (Jantar Leve / Recuperação)',
+      timeSchedule: '19:30',
+      targetProteinG: 34,
+      targetCarbsG: 42,
+      targetFatG: 11,
+      targetCaloriesKcal: 403,
+      isCompleted: false,
+      notes: 'Priorizar vegetais crucíferos.',
+      foods: [
+        {
+          id: 'cf-8',
+          name: 'Peito de Frango Desfiado com Cúrcuma',
+          portion: '130g',
+          amountGrams: 130,
+          proteinG: 32,
+          carbsG: 0,
+          fatG: 3,
+          caloriesKcal: 155,
+          category: 'proteina',
+          isCompleted: false
+        },
+        {
+          id: 'cf-9',
+          name: 'Purê de Abóbora Cabotiá',
+          portion: '200g',
+          amountGrams: 200,
+          proteinG: 2,
+          carbsG: 24,
+          fatG: 1,
+          caloriesKcal: 113,
+          category: 'carboidrato',
+          isCompleted: false
+        }
+      ]
+    },
+    {
+      id: 'cam-meal-5',
+      number: 5,
+      name: 'Refeição 5 (Ceia Anticatabólica)',
+      timeSchedule: '22:30',
+      targetProteinG: 10,
+      targetCarbsG: 38,
+      targetFatG: 11,
+      targetCaloriesKcal: 291,
+      isCompleted: false,
+      notes: 'Melatonina 30 min antes de deitar.',
+      foods: [
+        {
+          id: 'cf-10',
+          name: 'Abacate com Sementes de Chia',
+          portion: '80g abacate + 10g chia',
+          amountGrams: 90,
+          proteinG: 3,
+          carbsG: 8,
+          fatG: 14,
+          caloriesKcal: 170,
+          category: 'gordura',
+          isCompleted: false
+        }
+      ]
+    }
+  ]
+};
+
+export const CAMILA_WORKOUT_SPLITS: WorkoutSplit[] = [
+  {
+    id: 'cam-w-a',
+    code: 'Treino A',
+    name: 'Glúteos & Isquiotibiais (Foco Hip Thrust & Força Posterior)',
+    dayOfWeek: 'Segunda-feira',
+    targetMuscleGroups: ['Glúteo Máximo', 'Isquiotibiais', 'Glúteo Médio'],
+    estimatedDurationMinutes: 70,
+    isCompletedToday: false,
+    cardioOrientation: {
+      enabled: true,
+      type: 'Escada (Stairmaster)',
+      durationMinutes: 30,
+      intensity: 'Moderada / Contínua',
+      targetKcal: 280,
+      timing: 'Pós-Treino',
+      instructions: 'Nível 6-7 sem segurar nos corrimãos. Foco na extensão completa de quadril a cada degrau.'
+    },
+    exercises: [
+      {
+        id: 'cam-ex-1',
+        name: 'Elevação Pélvica com Barra (Hip Thrust)',
+        targetMuscle: 'Glúteo Máximo',
+        restSeconds: 90,
+        cadence: '3012',
+        technicalNotes: 'Pausa isométrica de 2s no topo da contração. Manter queixo apontado para o peito.',
+        sets: [
+          { setNumber: 1, repsTarget: '15', weightKgLogged: 100, technique: 'Warm-up', isCompleted: true, rpe: 6 },
+          { setNumber: 2, repsTarget: '12', weightKgLogged: 140, technique: 'Normal', isCompleted: true, rpe: 8 },
+          { setNumber: 3, repsTarget: '10', weightKgLogged: 160, technique: 'Normal', isCompleted: false, rpe: 9 },
+          { setNumber: 4, repsTarget: '8 + Rest-pause', weightKgLogged: 170, technique: 'Rest-pause', isCompleted: false, rpe: 10 }
+        ]
+      },
+      {
+        id: 'cam-ex-2',
+        name: 'Stiff com Halteres (RDL)',
+        targetMuscle: 'Isquiotibiais & Glúteo',
+        restSeconds: 75,
+        cadence: '3110',
+        technicalNotes: 'Projetar quadril para trás mantendo coluna neutra. Alongamento máximo dos isquiotibiais.',
+        sets: [
+          { setNumber: 1, repsTarget: '12', weightKgLogged: 24, technique: 'Normal', isCompleted: false, rpe: 8 },
+          { setNumber: 2, repsTarget: '10-12', weightKgLogged: 28, technique: 'Normal', isCompleted: false, rpe: 8.5 },
+          { setNumber: 3, repsTarget: '10', weightKgLogged: 30, technique: 'Normal', isCompleted: false, rpe: 9 }
+        ]
+      },
+      {
+        id: 'cam-ex-3',
+        name: 'Glúteo na Polia Baixa com Caneleira (Kickback)',
+        targetMuscle: 'Glúteo Superior',
+        restSeconds: 60,
+        cadence: '2012',
+        technicalNotes: 'Tronco levemente inclinado a 45°. Foco no pico de contração no topo.',
+        sets: [
+          { setNumber: 1, repsTarget: '15', weightKgLogged: 15, technique: 'Normal', isCompleted: false, rpe: 8 },
+          { setNumber: 2, repsTarget: '12-15', weightKgLogged: 20, technique: 'Normal', isCompleted: false, rpe: 9 },
+          { setNumber: 3, repsTarget: '12 + Drop', weightKgLogged: 20, technique: 'Drop set', isCompleted: false, rpe: 10 }
+        ]
+      }
+    ]
+  },
+  {
+    id: 'cam-w-b',
+    code: 'Treino B',
+    name: 'Dorsal & Ombros (V-Taper Feminino & Linha de Cintura)',
+    dayOfWeek: 'Terça-feira',
+    targetMuscleGroups: ['Grande Dorsal', 'Deltoides Lateral', 'Posterior de Ombro'],
+    estimatedDurationMinutes: 60,
+    isCompletedToday: false,
+    cardioOrientation: {
+      enabled: true,
+      type: 'Esteira Inclinada',
+      durationMinutes: 25,
+      intensity: 'Zona 2',
+      targetKcal: 200,
+      timing: 'Pós-Treino'
+    },
+    exercises: [
+      {
+        id: 'cam-ex-4',
+        name: 'Puxada Frontal Pegada Neutra Fechada',
+        targetMuscle: 'Grande Dorsal',
+        restSeconds: 75,
+        cadence: '2011',
+        technicalNotes: 'Conectar escápulas antes de flexionar os cotovelos.',
+        sets: [
+          { setNumber: 1, repsTarget: '12', weightKgLogged: 45, technique: 'Normal', isCompleted: false, rpe: 7 },
+          { setNumber: 2, repsTarget: '10', weightKgLogged: 52, technique: 'Normal', isCompleted: false, rpe: 8.5 },
+          { setNumber: 3, repsTarget: '8-10', weightKgLogged: 57, technique: 'Normal', isCompleted: false, rpe: 9 }
+        ]
+      },
+      {
+        id: 'cam-ex-5',
+        name: 'Elevação Lateral com Halteres no Banco Inclinado',
+        targetMuscle: 'Deltoide Lateral',
+        restSeconds: 60,
+        cadence: '2011',
+        technicalNotes: 'Banco a 75° para isolamento do feixe medial e expansão de ombros.',
+        sets: [
+          { setNumber: 1, repsTarget: '15', weightKgLogged: 8, technique: 'Normal', isCompleted: false, rpe: 8 },
+          { setNumber: 2, repsTarget: '12-15', weightKgLogged: 9, technique: 'Normal', isCompleted: false, rpe: 8.5 },
+          { setNumber: 3, repsTarget: '10-12 + Drop', weightKgLogged: 10, technique: 'Drop set', isCompleted: false, rpe: 10 }
+        ]
+      }
+    ]
+  }
+];
+
+export const CAMILA_SUPPLEMENT_PROTOCOLS: SupplementItem[] = [
+  {
+    id: 'cam-sup-1',
+    name: 'Termogênico LM Burn Caps',
+    dosage: '1 dose (2 cápsulas)',
+    schedule: '06:45 (Ao acordar em jejum antes do cardio)',
+    category: 'geral',
+    benefits: 'Aceleração do metabolismo basal, foco matinal e lipólise aeróbica.',
+    ingredients: ['Cafeína Anidra 200mg', 'L-Tirosina 500mg', 'Extrato de Chá Verde 300mg', 'Picolinato de Cromo 100mcg'],
+    isTakenToday: true,
+    doctorNotes: 'Não consumir após as 15:00 para não interferir no sono reparador.'
+  },
+  {
+    id: 'cam-sup-2',
+    name: 'Picolinato de Cromo Quelato',
+    dosage: '200mcg ao dia',
+    schedule: '12:00 (Junto ao almoço pré-treino)',
+    category: 'geral',
+    benefits: 'Otimização da sensibilidade à insulina e redução da compulsão por doces.',
+    ingredients: ['Picolinato de Cromo 200mcg'],
+    isTakenToday: false,
+    doctorNotes: 'Consumo contínuo diário.'
+  },
+  {
+    id: 'cam-sup-3',
+    name: 'Colágeno Hidrolisado Verisol com Ácido Hialurônico',
+    dosage: '1 sachê (5g de peptídeos)',
+    schedule: '07:30 (Junto ao Café da Manhã)',
+    category: 'geral',
+    benefits: 'Elasticidade da pele, firmeza dérmica e saúde articular durante o corte calórico.',
+    ingredients: ['Peptídeos Bioativos Verisol 2.5g', 'Ácido Hialurônico 100mg', 'Vitamina C 100mg', 'Silício Orgânico 10mg'],
+    isTakenToday: true,
+    doctorNotes: 'Excelente para preservação do turgor tecidual em cutting.'
+  },
+  {
+    id: 'cam-sup-4',
+    name: 'L-Glutamina Micronizada',
+    dosage: '10g ao dia',
+    schedule: '16:30 (Pós-treino imediato junto ao Whey)',
+    category: 'geral',
+    benefits: 'Integridade da barreira intestinal e suporte imunológico durante treinos intensos.',
+    ingredients: ['L-Glutamina 100% Pura 10g'],
+    isTakenToday: false,
+    doctorNotes: 'Auxilia na recuperação gastrointestinal.'
+  },
+  {
+    id: 'cam-sup-5',
+    name: 'Melatonina Sublingual Fast Action',
+    dosage: '3mg',
+    schedule: '22:30 (30 minutos antes de dormir)',
+    category: 'geral',
+    benefits: 'Indução rápida do sono REM e síntese noturna de GH.',
+    ingredients: ['Melatonina Sublingual 3mg'],
+    isTakenToday: false,
+    doctorNotes: 'Desligar telas de celulares e luzes azuis após a ingestão.'
+  }
+];
+
+export interface AthletePlanBundle {
+  nutritionPlan: NutritionPlan;
+  workoutSplits: WorkoutSplit[];
+  supplements: SupplementItem[];
+}
+
+export const ATHLETE_INITIAL_PLANS: Record<string, AthletePlanBundle> = {
+  'ath-01': {
+    nutritionPlan: INITIAL_NUTRITION_PLAN,
+    workoutSplits: WORKOUT_SPLITS,
+    supplements: SUPPLEMENT_PROTOCOLS
+  },
+  'ath-02': {
+    nutritionPlan: CAMILA_NUTRITION_PLAN,
+    workoutSplits: CAMILA_WORKOUT_SPLITS,
+    supplements: CAMILA_SUPPLEMENT_PROTOCOLS
+  }
+};
+

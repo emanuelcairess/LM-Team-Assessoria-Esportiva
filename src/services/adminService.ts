@@ -1,6 +1,6 @@
-import { auth, db, sendPasswordResetEmail, updatePassword } from '../lib/firebase';
+import { auth, db, sendPasswordResetEmail, updatePassword, signOut, signInWithEmailAndPassword } from '../lib/firebase';
 import { PrescriberProfile, AthleteProfile, AuditLog, UserProfile } from '../types';
-import { collection, addDoc, doc, getDoc, setDoc } from 'firebase/firestore';
+import { collection, addDoc, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 
 class AdminService {
   /**
@@ -49,12 +49,14 @@ class AdminService {
       // Fallback to direct Firestore getDoc
       if (auth.currentUser && db) {
         const uid = auth.currentUser.uid;
-        const snap = await getDoc(doc(db, 'users', uid));
-        const data = snap.data();
+        const [userSnap, adminSnap] = await Promise.all([
+          getDoc(doc(db, 'users', uid)),
+          getDoc(doc(db, 'admins', uid))
+        ]);
+        const data = userSnap.data();
+        const isAdmin = adminSnap.exists() || (data?.role === 'admin' && data?.isAdmin === true);
+        const isMaster = isAdmin && (data?.isMaster === true || adminSnap.data()?.isMaster === true);
         const email = auth.currentUser.email || '';
-        const isMasterEmail = email.toLowerCase() === 'emanuelcairess@gmail.com';
-        const isAdmin = isMasterEmail || data?.role === 'admin' || data?.isAdmin === true;
-        const isMaster = isAdmin || data?.isMaster === true;
 
         return {
           uid,
@@ -80,44 +82,28 @@ class AdminService {
     error?: string;
   }> {
     const token = await this.getIdToken();
-    if (token) {
-      try {
-        const response = await fetch('/api/admin/create-prescriber', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`
-          },
-          body: JSON.stringify(payload)
-        });
-        const result = await response.json();
-        if (response.ok && result.success) {
-          return { success: true, prescriber: result.prescriber };
-        }
-        return { success: false, error: result.message || 'Falha ao criar prescritor.' };
-      } catch (err: any) {
-        console.warn('API /api/admin/create-prescriber error, writing via client Firestore:', err);
-      }
+    if (!token) {
+      return { success: false, error: 'Sessão expirada. Autentique-se como Administrador Geral.' };
     }
 
-    // Direct Firestore fallback (guarded by firestore.rules)
-    if (db && payload.id) {
-      try {
-        await setDoc(doc(db, 'prescribers', payload.id), payload, { merge: true });
-        await this.logClientAudit({
-          action: 'CREATE_PRESCRIBER',
-          resource: 'prescriber',
-          resourceId: payload.id,
-          details: `Prescritor ${payload.name} criado via cliente Firestore.`,
-          changes: payload
-        });
-        return { success: true, prescriber: payload as PrescriberProfile };
-      } catch (dbErr: any) {
-        return { success: false, error: dbErr.message };
+    try {
+      const response = await fetch('/api/admin/create-prescriber', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json();
+      if (response.ok && result.success) {
+        return { success: true, prescriber: result.prescriber };
       }
+      return { success: false, error: result.message || result.error || 'Falha ao criar prescritor.' };
+    } catch (err: any) {
+      console.error('API /api/admin/create-prescriber error:', err);
+      return { success: false, error: `Falha de rede ao criar prescritor: ${err?.message || err}` };
     }
-
-    return { success: false, error: 'Não autenticado' };
   }
 
   /**
@@ -187,43 +173,28 @@ class AdminService {
     assignedPrescriberIds?: string[];
   }): Promise<{ success: boolean; error?: string }> {
     const token = await this.getIdToken();
-    if (token) {
-      try {
-        const response = await fetch('/api/admin/update-athlete-assignments', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`
-          },
-          body: JSON.stringify(payload)
-        });
-        const result = await response.json();
-        if (response.ok && result.success) {
-          return { success: true };
-        }
-        return { success: false, error: result.message || 'Falha ao atualizar vínculos.' };
-      } catch (err) {
-        console.warn('API error updating athlete assignments, using fallback:', err);
-      }
+    if (!token) {
+      return { success: false, error: 'Sessão expirada. Autentique-se como Administrador Geral.' };
     }
 
-    if (db && payload.athleteId) {
-      try {
-        await setDoc(doc(db, 'athletes', payload.athleteId), payload, { merge: true });
-        await this.logClientAudit({
-          action: 'UPDATE_ATHLETE_ASSIGNMENTS',
-          resource: 'athlete',
-          resourceId: payload.athleteId,
-          details: 'Vínculos do atleta atualizados.',
-          changes: payload
-        });
+    try {
+      const response = await fetch('/api/admin/update-athlete-assignments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json();
+      if (response.ok && result.success) {
         return { success: true };
-      } catch (e: any) {
-        return { success: false, error: e.message };
       }
+      return { success: false, error: result.message || result.error || 'Falha ao atualizar vínculos.' };
+    } catch (err: any) {
+      console.error('API error updating athlete assignments:', err);
+      return { success: false, error: `Falha de rede ao atualizar vínculos: ${err?.message || err}` };
     }
-
-    return { success: false, error: 'Não autenticado' };
   }
 
   /**
@@ -405,6 +376,10 @@ class AdminService {
   /**
    * Prescriber / Admin Backend Authentication
    */
+  /**
+   * Unified Prescriber Login via Firebase Authentication
+   * Validates credentials strictly in Firebase Auth and authoritative backend profile.
+   */
   public async prescriberLogin(email: string, password: string): Promise<{
     success: boolean;
     profile?: PrescriberProfile;
@@ -412,31 +387,51 @@ class AdminService {
     error?: string;
   }> {
     try {
-      const response = await fetch('/api/auth/prescriber-login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ email, password })
+      const cleanEmail = email.toLowerCase().trim();
+      const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, password);
+      const fbUser = userCredential.user;
+      const token = await fbUser.getIdToken(true);
+
+      // Validate account status and authorized profile on the authoritative backend
+      const response = await fetch('/api/auth/me', {
+        headers: { Authorization: `Bearer ${token}` }
       });
-      const result = await response.json();
-      if (response.ok && result.success && result.profile) {
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        await signOut(auth);
         return {
-          success: true,
-          profile: result.profile,
-          uid: result.user?.uid || result.profile.firebaseUid || result.profile.id
+          success: false,
+          error: data.message || 'Acesso negado: Perfil não autorizado ou conta inativa.'
         };
       }
+
+      const prescriberProfile = data.user?.profile || data.user;
+      if (!prescriberProfile || (!data.user?.isAdmin && data.user?.role === 'athlete')) {
+        await signOut(auth);
+        return {
+          success: false,
+          error: 'Perfil profissional não encontrado para esta conta.'
+        };
+      }
+
       return {
-        success: false,
-        error: result.message || 'Credenciais inválidas.'
+        success: true,
+        profile: prescriberProfile,
+        uid: fbUser.uid
       };
     } catch (err: any) {
-      console.warn('Backend prescriber login error:', err);
-      return {
-        success: false,
-        error: 'Falha de conexão com o servidor de autenticação.'
-      };
+      console.warn('Unified prescriber login error in Firebase Auth:', err);
+      const code = err?.code || '';
+      let errorMsg = 'E-mail ou senha incorretos.';
+      if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+        errorMsg = 'E-mail ou senha incorretos. Verifique suas credenciais ou solicite a redefinição de senha.';
+      } else if (code === 'auth/too-many-requests') {
+        errorMsg = 'Muitas tentativas sem sucesso. Tente novamente mais tarde.';
+      } else if (err?.message) {
+        errorMsg = err.message;
+      }
+      return { success: false, error: errorMsg };
     }
   }
 
@@ -481,38 +476,65 @@ class AdminService {
   }
 
   /**
-   * Athlete Phone + Prescriber-Generated Password Authentication
+   * Unified Athlete Login via Firebase Authentication
+   * Authenticates athlete credentials against Firebase Auth and backend /api/auth/me.
    */
-  public async athleteLogin(phone: string, password: string): Promise<{
+  public async athleteLogin(phoneOrEmail: string, password: string): Promise<{
     success: boolean;
     athlete?: AthleteProfile;
+    uid?: string;
     error?: string;
   }> {
     try {
-      const response = await fetch('/api/auth/athlete-login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ phone, password })
+      const cleanDigits = phoneOrEmail.replace(/\D/g, '');
+      const loginEmail = phoneOrEmail.includes('@')
+        ? phoneOrEmail.toLowerCase().trim()
+        : `${cleanDigits}@athlete.lmteam.com`;
+
+      const userCredential = await signInWithEmailAndPassword(auth, loginEmail, password);
+      const fbUser = userCredential.user;
+      const token = await fbUser.getIdToken(true);
+
+      // Validate account status & authorized profile on backend
+      const response = await fetch('/api/auth/me', {
+        headers: { Authorization: `Bearer ${token}` }
       });
-      const result = await response.json();
-      if (response.ok && result.success && result.athlete) {
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        await signOut(auth);
         return {
-          success: true,
-          athlete: result.athlete
+          success: false,
+          error: data.message || 'Conta inativa ou não autorizada.'
         };
       }
+
+      const athleteProfile = data.user?.profile || data.user;
+      if (!athleteProfile) {
+        await signOut(auth);
+        return {
+          success: false,
+          error: 'Perfil de aluno não encontrado para esta conta.'
+        };
+      }
+
       return {
-        success: false,
-        error: result.message || 'Telefone ou senha incorretos.'
+        success: true,
+        athlete: athleteProfile,
+        uid: fbUser.uid
       };
     } catch (err: any) {
-      console.warn('Backend athlete login failed or offline:', err);
-      return {
-        success: false,
-        error: 'Falha de conexão com o servidor.'
-      };
+      console.warn('Unified athlete login error in Firebase Auth:', err);
+      const code = err?.code || '';
+      let errorMsg = 'Telefone ou senha incorretos.';
+      if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+        errorMsg = 'Telefone ou senha incorretos. Solicite o link de acesso ou redefinição ao seu treinador.';
+      } else if (code === 'auth/too-many-requests') {
+        errorMsg = 'Muitas tentativas incorretas. Tente novamente em alguns minutos.';
+      } else if (err?.message) {
+        errorMsg = err.message;
+      }
+      return { success: false, error: errorMsg };
     }
   }
 
@@ -525,42 +547,28 @@ class AdminService {
     error?: string;
   }> {
     const token = await this.getIdToken();
-    if (token) {
-      try {
-        const response = await fetch('/api/admin/set-athlete-password', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`
-          },
-          body: JSON.stringify({ athleteId, newPassword })
-        });
-        const result = await response.json();
-        if (response.ok && result.success) {
-          return { success: true, password: result.password || newPassword };
-        }
-        return { success: false, error: result.message || 'Falha ao atualizar senha do aluno.' };
-      } catch (err) {
-        console.warn('API error setting athlete password, using direct database fallback:', err);
-      }
+    if (!token) {
+      return { success: false, error: 'Sessão expirada. Autentique-se como Administrador Geral.' };
     }
 
-    if (db && athleteId) {
-      try {
-        await setDoc(doc(db, 'athletes', athleteId), { password: newPassword, updatedAt: Date.now() }, { merge: true });
-        await this.logClientAudit({
-          action: 'UPDATE_ATHLETE_PASSWORD',
-          resource: 'athlete',
-          resourceId: athleteId,
-          details: 'Senha de acesso do aluno gerada/atualizada pelo prescritor.'
-        });
-        return { success: true, password: newPassword };
-      } catch (e: any) {
-        return { success: false, error: e.message };
+    try {
+      const response = await fetch('/api/admin/set-athlete-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ athleteId, newPassword })
+      });
+      const result = await response.json();
+      if (response.ok && result.success) {
+        return { success: true, password: result.password || newPassword };
       }
+      return { success: false, error: result.message || result.error || 'Falha ao atualizar senha do aluno no Firebase Auth.' };
+    } catch (err: any) {
+      console.error('API error setting athlete password:', err);
+      return { success: false, error: `Falha de rede ao atualizar senha do aluno: ${err?.message || err}` };
     }
-
-    return { success: false, error: 'Falha ao salvar senha' };
   }
 
   /**
@@ -573,50 +581,32 @@ class AdminService {
     error?: string;
   }> {
     const token = await this.getIdToken();
-    if (token) {
-      try {
-        const response = await fetch('/api/admin/set-prescriber-password', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`
-          },
-          body: JSON.stringify({ prescriberId, newPassword })
-        });
-        const result = await response.json();
-        if (response.ok && result.success) {
-          return {
-            success: true,
-            password: result.password || newPassword,
-            message: result.message || 'Senha do prescritor atualizada com sucesso.'
-          };
-        }
-        return { success: false, error: result.message || 'Falha ao atualizar senha do prescritor.' };
-      } catch (err) {
-        console.warn('API error setting prescriber password, using direct database fallback:', err);
-      }
+    if (!token) {
+      return { success: false, error: 'Sessão expirada. Autentique-se como Administrador Geral.' };
     }
 
-    if (db && prescriberId) {
-      try {
-        await setDoc(doc(db, 'prescribers', prescriberId), {
-          password: newPassword,
-          passwordChangedAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
-        await this.logClientAudit({
-          action: 'UPDATE_PRESCRIBER_PASSWORD',
-          resource: 'prescriber',
-          resourceId: prescriberId,
-          details: 'Senha de acesso do prescritor atualizada pelo administrador geral.'
-        });
-        return { success: true, password: newPassword, message: 'Senha atualizada com sucesso no banco de dados.' };
-      } catch (e: any) {
-        return { success: false, error: e.message };
+    try {
+      const response = await fetch('/api/admin/set-prescriber-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ prescriberId, newPassword })
+      });
+      const result = await response.json();
+      if (response.ok && result.success) {
+        return {
+          success: true,
+          password: result.password || newPassword,
+          message: result.message || 'Senha do prescritor atualizada com sucesso no Firebase Auth.'
+        };
       }
+      return { success: false, error: result.message || result.error || 'Falha ao atualizar senha do prescritor no Firebase Auth.' };
+    } catch (err: any) {
+      console.error('API error setting prescriber password:', err);
+      return { success: false, error: `Falha de rede ao atualizar senha do prescritor: ${err?.message || err}` };
     }
-
-    return { success: false, error: 'Falha ao salvar senha do prescritor.' };
   }
 
   /**
@@ -640,23 +630,31 @@ class AdminService {
     }
 
     const cleanPassword = newPassword.trim();
+    let clientUpdated = false;
 
     // 1. Try Firebase Auth client update if user is logged into Firebase Auth
     if (auth.currentUser) {
       try {
         await updatePassword(auth.currentUser, cleanPassword);
+        clientUpdated = true;
       } catch (fbAuthErr: any) {
         console.warn('Firebase Auth client updatePassword notice:', fbAuthErr?.code || fbAuthErr?.message);
       }
     }
 
-    // 2. Call backend endpoint /api/auth/change-my-password
+    // 2. Call backend endpoint /api/auth/change-my-password with Bearer token if available
+    const token = await this.getIdToken();
     try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch('/api/auth/change-my-password', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify({
           userId: userId || auth.currentUser?.uid,
           userType,
@@ -667,37 +665,55 @@ class AdminService {
       });
       const result = await response.json();
       if (response.ok && result.success) {
-        return { success: true, message: result.message || 'Senha alterada com sucesso!' };
+        return { success: true, message: result.message || 'Senha alterada no Firebase Auth com sucesso!' };
       }
-      if (result.message) {
-        return { success: false, message: result.message, error: result.message };
+      if (!clientUpdated) {
+        return { success: false, message: result.message || result.error || 'Falha ao alterar senha no Firebase Auth.', error: result.message || result.error };
       }
     } catch (err: any) {
-      console.warn('Backend change-my-password error, trying direct Firestore write:', err);
-    }
-
-    // 3. Fallback direct Firestore write
-    if (db) {
-      try {
-        if (userType === 'athlete' && userId) {
-          await setDoc(doc(db, 'athletes', userId), {
-            password: cleanPassword,
-            updatedAt: Date.now()
-          }, { merge: true });
-        } else if (userId) {
-          await setDoc(doc(db, 'prescribers', userId), {
-            password: cleanPassword,
-            passwordChangedAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          }, { merge: true });
-        }
-        return { success: true, message: 'Senha alterada com sucesso!' };
-      } catch (e: any) {
-        return { success: false, message: e.message || 'Erro ao atualizar senha.', error: e.message };
+      console.error('Backend change-my-password error:', err);
+      if (!clientUpdated) {
+        return { success: false, message: `Falha de conexão ao atualizar senha: ${err?.message || err}`, error: err?.message || err };
       }
     }
 
-    return { success: true, message: 'Senha alterada com sucesso!' };
+    if (clientUpdated) {
+      return { success: true, message: 'Senha atualizada no Firebase Auth com sucesso!' };
+    }
+
+    return { success: false, message: 'Não foi possível atualizar a senha. Verifique sua conexão e tente novamente.', error: 'UPDATE_PASSWORD_FAILED' };
+  }
+
+  /**
+   * Administrative/Migration: Migra usuários para Firebase Auth por convite/reset
+   * e purga campos de senha do banco e memória
+   */
+  public async migrateUsersToAuth(): Promise<{
+    success: boolean;
+    migratedAthletes?: number;
+    migratedPrescribers?: number;
+    purgedFieldsCount?: number;
+    resetLinks?: Array<{ email: string; resetLink: string; role: string }>;
+    message?: string;
+    error?: string;
+  }> {
+    const token = await this.getIdToken();
+    try {
+      const response = await fetch('/api/admin/migrate-users-to-auth', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        }
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        return data;
+      }
+      return { success: false, error: data.message || 'Falha na migração de usuários.' };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
   }
 
   /**
@@ -727,6 +743,104 @@ class AdminService {
     } catch (e) {
       console.warn('Could not write client audit log:', e);
     }
+  }
+
+  /**
+   * User Self-Registration (/users/{uid})
+   * Protected with strict allowlist and zero-trust validation
+   */
+  public async selfRegister(data: Partial<UserProfile>): Promise<{ success: boolean; user?: any; error?: string }> {
+    const token = await this.getIdToken();
+    if (token) {
+      try {
+        const response = await fetch('/api/users/self-register', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify(data)
+        });
+        const resData = await response.json();
+        if (response.ok) {
+          return { success: true, user: resData.user };
+        }
+        return { success: false, error: resData.message || resData.error };
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+    }
+
+    // Direct Firestore write (protected by security rules)
+    if (auth.currentUser && db) {
+      try {
+        const uid = auth.currentUser.uid;
+        const sanitizedData = {
+          id: uid,
+          email: auth.currentUser.email || '',
+          name: data.name || 'Novo Aluno',
+          role: 'athlete' as const,
+          status: 'Ativo' as const,
+          phone: data.phone,
+          avatar: data.avatar,
+          birthDate: data.birthDate,
+          cpf: data.cpf,
+          bio: data.bio,
+          gender: data.gender,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        await setDoc(doc(db, 'users', uid), sanitizedData);
+        return { success: true, user: sanitizedData };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    }
+
+    return { success: false, error: 'Usuário não autenticado.' };
+  }
+
+  /**
+   * User Self Profile Update (/users/{uid})
+   * Prohibits athleteId, prescriberId, assignedAthleteIds, isAdmin, isMaster, role
+   */
+  public async updateProfile(updates: Partial<UserProfile>): Promise<{ success: boolean; profile?: any; error?: string }> {
+    const token = await this.getIdToken();
+    if (token) {
+      try {
+        const response = await fetch('/api/users/profile', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify(updates)
+        });
+        const resData = await response.json();
+        if (response.ok) {
+          return { success: true, profile: resData.profile };
+        }
+        return { success: false, error: resData.message || resData.error };
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+    }
+
+    // Direct Firestore update (protected by security rules)
+    if (auth.currentUser && db) {
+      try {
+        const uid = auth.currentUser.uid;
+        // Strip prohibited fields
+        const { athleteId, prescriberId, assignedAthleteIds, isAdmin, isMaster, role, status, id, email, ...allowedUpdates } = updates as any;
+        allowedUpdates.updatedAt = new Date().toISOString();
+        await updateDoc(doc(db, 'users', uid), allowedUpdates);
+        return { success: true, profile: allowedUpdates };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    }
+
+    return { success: false, error: 'Usuário não autenticado.' };
   }
 }
 

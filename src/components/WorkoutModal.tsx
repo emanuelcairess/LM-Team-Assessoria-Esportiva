@@ -27,7 +27,7 @@ import {
   BookOpen,
   Search
 } from 'lucide-react';
-import { WorkoutSplit, Exercise, ExerciseSet, TechniqueType, WorkoutCardioOrientation, LibraryExercise } from '../types';
+import { WorkoutSplit, Exercise, ExerciseSet, TechniqueType, WorkoutCardioOrientation, LibraryExercise, AthleteProfile } from '../types';
 import { soundFx } from '../utils/audio';
 import { ExercisePickerModal } from './ExercisePickerModal';
 
@@ -40,6 +40,7 @@ interface WorkoutModalProps {
   exerciseLibrary?: LibraryExercise[];
   onSaveExerciseToLibrary?: (exercise: LibraryExercise) => void;
   onDeleteExerciseFromLibrary?: (exerciseId: string) => void;
+  athlete?: AthleteProfile;
 }
 
 const DAYS_OF_WEEK = [
@@ -121,7 +122,8 @@ export const WorkoutModal: React.FC<WorkoutModalProps> = ({
   existingSplitsCount,
   exerciseLibrary = [],
   onSaveExerciseToLibrary,
-  onDeleteExerciseFromLibrary
+  onDeleteExerciseFromLibrary,
+  athlete
 }) => {
   const isEditing = Boolean(splitToEdit);
 
@@ -585,6 +587,37 @@ export const WorkoutModal: React.FC<WorkoutModalProps> = ({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Athlete Identification Header Strip */}
+        {athlete && (
+          <div className="px-5 py-2.5 bg-slate-950/90 border-b border-white/10 flex items-center justify-between gap-3 text-xs shrink-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              {athlete.avatar ? (
+                <img
+                  src={athlete.avatar}
+                  alt={athlete.name}
+                  className="w-7 h-7 rounded-lg object-cover border border-orange-500/40 shrink-0"
+                />
+              ) : (
+                <div className="w-7 h-7 rounded-lg bg-orange-600/30 text-orange-300 flex items-center justify-center font-bold text-xs border border-orange-500/40 shrink-0">
+                  {athlete.name?.slice(0, 2).toUpperCase() || 'AT'}
+                </div>
+              )}
+              <div className="flex items-center gap-2 min-w-0 truncate">
+                <span className="text-white font-bold truncate">{athlete.name}</span>
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-orange-500/20 text-orange-300 border border-orange-500/30 shrink-0">
+                  #{athlete.id.toUpperCase()}
+                </span>
+                <span className="text-slate-400 text-[11px] hidden sm:inline truncate">
+                  • {athlete.category} • {athlete.goal || 'Performance'}
+                </span>
+              </div>
+            </div>
+            <div className="text-[10px] uppercase font-bold text-orange-400 shrink-0 bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/20">
+              Prescrição de Treino
+            </div>
+          </div>
+        )}
 
         {/* DAY TYPE SELECTOR (MUSCULAÇÃO vs CARDIO EXCLUSIVO vs DESCANSO TOTAL) */}
         <div className="px-5 sm:px-6 pt-4 pb-2 bg-black/40 border-b border-white/5">

@@ -90,30 +90,8 @@ export const LoginView: React.FC<LoginViewProps> = ({
     return `(${cleanDigits.slice(0, 2)}) ${cleanDigits.slice(2, 7)}-${cleanDigits.slice(7, 11)}`;
   };
 
-  // Helper: Find or map matching prescriber domain profile
-  const resolvePrescriberProfile = (email: string, uid: string): PrescriberProfile => {
-    const matched = prescribersList.find(
-      (p) => p.email.toLowerCase() === email.toLowerCase() || p.firebaseUid === uid
-    );
-    if (matched) {
-      return { ...matched, firebaseUid: uid };
-    }
-    return {
-      id: `presc-${uid.slice(0, 8)}`,
-      name: email.split('@')[0],
-      roleType: 'Prescritor',
-      phone: '',
-      birthDate: '1990-01-01',
-      email: email,
-      firebaseUid: uid,
-      isMaster: false,
-      isAdmin: email.toLowerCase() === 'emanuelcairess@gmail.com',
-      status: 'Ativo'
-    };
-  };
-
   // ============================================================================
-  // 1. ATLETA: LOGIN EXCLUSIVO VIA TELEFONE + SENHA GERADA PELO PRESCRITOR
+  // 1. ATLETA: LOGIN EXCLUSIVO VIA FIREBASE AUTHENTICATION
   // ============================================================================
   const handleAthleteLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -130,64 +108,23 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
     if (!athletePassword.trim()) {
       soundFx.playAlert();
-      setErrorMessage('Informe sua senha de acesso gerada pelo seu treinador/prescritor.');
+      setErrorMessage('Informe sua senha de acesso.');
       return;
     }
 
     setIsAuthenticating(true);
 
     try {
-      // 1. Attempt authoritative backend athlete authentication
+      // Unified login strictly via Firebase Auth & Authoritative Backend Validation
       const res = await adminService.athleteLogin(cleanInputPhone, athletePassword.trim());
       if (res.success && res.athlete) {
         soundFx.playSuccess();
-        onLoginSuccess(res.athlete);
+        onLoginSuccess(res.athlete, res.uid);
         return;
       }
 
-      // If backend explicitly returned an error (e.g. inactive account, wrong password)
-      if (res.error && !res.error.includes('conexão') && !res.error.includes('offline')) {
-        soundFx.playAlert();
-        setErrorMessage(res.error);
-        return;
-      }
-
-      // 2. Client-side fallback matching against synchronized athletesList
-      const matched = athletesList.find((ath) => {
-        const athPhoneDigits = (ath.phone || '').replace(/\D/g, '');
-        if (athPhoneDigits === cleanInputPhone) return true;
-        if (cleanInputPhone.length >= 8 && athPhoneDigits.endsWith(cleanInputPhone.slice(-8))) return true;
-        if (ath.id.toLowerCase() === athletePhone.toLowerCase().trim()) return true;
-        return false;
-      });
-
-      if (!matched) {
-        soundFx.playAlert();
-        setErrorMessage('Nenhum aluno encontrado com este número de telefone. Solicite seu cadastro ao seu treinador/prescritor.');
-        return;
-      }
-
-      if (matched.status === 'Inativo') {
-        soundFx.playAlert();
-        setErrorMessage('Sua conta de aluno está inativa. Entre em contato com seu treinador/prescritor para reativar seu plano.');
-        return;
-      }
-
-      // Check password registered by coach/admin
-      if (!matched.password) {
-        soundFx.playAlert();
-        setErrorMessage('Nenhuma senha foi cadastrada para este aluno. Solicite a criação da sua senha de acesso ao seu treinador.');
-        return;
-      }
-
-      if (athletePassword.trim() !== matched.password) {
-        soundFx.playAlert();
-        setErrorMessage('Senha incorreta. Solicite a senha de acesso ao seu treinador ou nutricionista.');
-        return;
-      }
-
-      soundFx.playSuccess();
-      onLoginSuccess(matched);
+      soundFx.playAlert();
+      setErrorMessage(res.error || 'Telefone ou senha incorretos.');
     } catch (err: any) {
       soundFx.playAlert();
       setErrorMessage('Erro ao autenticar. Verifique seus dados ou contate seu prescritor.');
@@ -197,7 +134,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
   };
 
   // ============================================================================
-  // 2. PRESCRITOR / ADMIN: LOGIN COM EMAIL E SENHA (FIREBASE AUTH + RESILIENT BACKEND & LOCAL FALLBACK)
+  // 2. PRESCRITOR / ADMIN: LOGIN UNIFICADO EM FIREBASE AUTHENTICATION
   // ============================================================================
   const handlePrescriberLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -223,70 +160,19 @@ export const LoginView: React.FC<LoginViewProps> = ({
     setIsAuthenticating(true);
 
     try {
-      // 1. Primary Authentication: Official Firebase Authentication Client
-      try {
-        const userCredential = await signInWithEmailAndPassword(auth, email, password);
-        const user = userCredential.user;
+      // Unified login strictly via Firebase Auth & Authoritative Backend Validation
+      const res = await adminService.prescriberLogin(email, password);
+      if (res.success && res.profile) {
         soundFx.playSuccess();
-        const profile = resolvePrescriberProfile(user.email || email, user.uid);
-        onPrescriberLoginSuccess(profile, user.uid);
-        return;
-      } catch (fbErr: any) {
-        console.warn('Firebase Auth client sign in note:', fbErr?.code || fbErr?.message);
-      }
-
-      // 2. Backend Direct Verification: Synchronized server state & admin-configured passwords
-      try {
-        const serverAuth = await adminService.prescriberLogin(email, password);
-        if (serverAuth.success && serverAuth.profile) {
-          soundFx.playSuccess();
-          onPrescriberLoginSuccess(serverAuth.profile, serverAuth.uid || serverAuth.profile.id);
-          return;
-        }
-
-        if (serverAuth.error && !serverAuth.error.includes('conexão') && !serverAuth.error.includes('offline') && !serverAuth.error.includes('servidor')) {
-          soundFx.playAlert();
-          setErrorMessage(serverAuth.error);
-          return;
-        }
-      } catch (srvErr) {
-        console.warn('Backend prescriberLogin note:', srvErr);
-      }
-
-      // 3. Resilient Client-side Fallback against synchronized prescribersList
-      const matched = prescribersList.find(
-        (p) => (p.email || '').toLowerCase().trim() === email
-      );
-
-      if (matched) {
-        if (matched.status === 'Inativo') {
-          soundFx.playAlert();
-          setErrorMessage('Sua conta profissional está inativa. Entre em contato com a administração.');
-          return;
-        }
-
-        if (!matched.password) {
-          soundFx.playAlert();
-          setErrorMessage('Esta conta profissional ainda não possui senha cadastrada. Solicite a definição da senha ao Administrador Geral.');
-          return;
-        }
-
-        if (matched.password !== password) {
-          soundFx.playAlert();
-          setErrorMessage('Senha incorreta. Verifique a senha cadastrada pelo Administrador ou solicite a redefinição.');
-          return;
-        }
-
-        soundFx.playSuccess();
-        onPrescriberLoginSuccess({ ...matched, firebaseUid: matched.firebaseUid || matched.id }, matched.firebaseUid || matched.id);
+        onPrescriberLoginSuccess(res.profile, res.uid);
         return;
       }
 
       soundFx.playAlert();
-      setErrorMessage('Nenhum profissional ou administrador encontrado com este e-mail. Verifique os dados digitados ou solicite o cadastro à administração.');
+      setErrorMessage(res.error || 'E-mail ou senha incorretos.');
     } catch (err: any) {
       soundFx.playAlert();
-      setErrorMessage('Erro ao autenticar. Verifique seus dados ou utilize a redefinição de senha.');
+      setErrorMessage('Erro ao autenticar. Verifique seus dados ou utilize a recuperação de senha.');
     } finally {
       setIsAuthenticating(false);
     }

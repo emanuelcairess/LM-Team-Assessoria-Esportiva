@@ -13,6 +13,10 @@ export interface UserProfile {
   isMaster?: boolean;
   avatar?: string;
   phone?: string;
+  birthDate?: string;
+  cpf?: string;
+  bio?: string;
+  gender?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -56,7 +60,6 @@ export interface PrescriberProfile {
   phone: string; // Telefone: (99) 99999-9999
   birthDate: string; // Data de nascimento: YYYY-MM-DD
   email: string;
-  password?: string; // Senha de acesso ao sistema
   firebaseUid?: string;
   avatar?: string;
   isMaster: boolean; // Prescritor Master (pode cadastrar outros prescritores)
@@ -84,27 +87,34 @@ export type ModuleType =
 
 export interface AnthropometricData {
   date: string;
-  weightKg: number;
-  heightCm: number;
-  bodyFatPercentage: number;
-  muscleMassKg: number;
-  chestCm: number;
-  shouldersCm: number;
-  waistCm: number;
-  abdomenCm: number;
-  rightArmCm: number;
-  leftArmCm: number;
-  rightThighCm: number;
-  leftThighCm: number;
-  calvesCm: number;
-  glutesCm: number;
-  neckCm: number;
+  weightKg?: number;
+  heightCm?: number;
+  bodyFatPercentage?: number;
+  muscleMassKg?: number;
+  chestCm?: number;
+  shouldersCm?: number;
+  waistCm?: number;
+  abdomenCm?: number;
+  rightArmCm?: number;
+  leftArmCm?: number;
+  rightThighCm?: number;
+  leftThighCm?: number;
+  calvesCm?: number;
+  glutesCm?: number;
+  neckCm?: number;
   photos?: {
     front?: string;
     back?: string;
     side?: string;
   };
   notes?: string;
+  validatedBy?: {
+    id?: string;
+    name: string;
+    role?: string;
+    crm_crn_cref?: string;
+  };
+  validatedAt?: string;
 }
 
 export interface AthleteProfile {
@@ -116,7 +126,6 @@ export interface AthleteProfile {
   phone?: string; // Formato: (99) 99999-9999
   cpf?: string; // Formato: 999.999.999-99
   birthDate?: string; // Formato: YYYY-MM-DD
-  password?: string; // Senha de acesso gerada pelo prescritor
   age: number;
   category: string; // e.g. "Avançado / Classic Physique"
   coachName: string;
@@ -201,6 +210,7 @@ export interface LibraryExercise {
 export interface ExerciseSet {
   setNumber: number;
   repsTarget: string; // e.g. "8-10" or "12-15"
+  repsLogged?: number | string; // Repetições realizadas registradas pelo atleta
   weightKgLogged?: number;
   technique: TechniqueType;
   isCompleted: boolean;
@@ -359,6 +369,14 @@ export interface FoodSubstitution {
 // ==========================================
 
 export type SyncState = 'synced' | 'pending_insert' | 'pending_update' | 'pending_delete' | 'sync_error' | 'syncing';
+
+export type PersistenceSyncState =
+  | 'carregando'
+  | 'sem_dados'
+  | 'alterado_localmente'
+  | 'aguardando_envio'
+  | 'salvo'
+  | 'falha';
 
 export type SyncEntityDomain = 
   | 'athlete'

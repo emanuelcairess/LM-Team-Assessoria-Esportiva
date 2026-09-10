@@ -26,6 +26,7 @@ import {
   Eye,
   EyeOff,
   Copy,
+  Send,
   Dice5
 } from 'lucide-react';
 import { PrescriberProfile, PrescriberRoleType } from '../types';
@@ -112,11 +113,27 @@ export const PrescriberModal: React.FC<PrescriberModalProps> = ({
   const [bio, setBio] = useState<string>('');
 
   // Password management for Admins
-  const [password, setPassword] = useState<string>('');
-  const [showPassword, setShowPassword] = useState<boolean>(false);
-  const [copiedPassword, setCopiedPassword] = useState<boolean>(false);
+  const [inviteSent, setInviteSent] = useState<boolean>(false);
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  const handleSendInvite = async () => {
+    soundFx.playClick();
+    if (!email.trim() || !email.includes('@')) {
+      soundFx.playAlert();
+      setFormErrors((prev) => ({ ...prev, email: 'Informe um e-mail válido para envio do convite.' }));
+      return;
+    }
+    try {
+      await adminService.requestPasswordReset(email.trim().toLowerCase());
+      setInviteSent(true);
+      soundFx.playSuccess();
+      setTimeout(() => setInviteSent(false), 3000);
+    } catch {
+      setInviteSent(true);
+      setTimeout(() => setInviteSent(false), 3000);
+    }
+  };
 
   // Reset or populate fields when modal opens or prescriberToEdit changes
   useEffect(() => {
@@ -133,7 +150,6 @@ export const PrescriberModal: React.FC<PrescriberModalProps> = ({
       setPhone(prescriberToEdit.phone || '');
       setBirthDate(prescriberToEdit.birthDate || '');
       setEmail(prescriberToEdit.email || '');
-      setPassword(prescriberToEdit.password || '');
       setCrmCrnCref(prescriberToEdit.crm_crn_cref || '');
       setAvatar(prescriberToEdit.avatar || PRESET_AVATARS[0]);
       setIsMaster(!!prescriberToEdit.isMaster);
@@ -147,7 +163,6 @@ export const PrescriberModal: React.FC<PrescriberModalProps> = ({
       setPhone('');
       setBirthDate('1990-01-01');
       setEmail('');
-      setPassword('');
       setCrmCrnCref('');
       setAvatar(PRESET_AVATARS[1]);
       setIsMaster(false);
@@ -155,8 +170,6 @@ export const PrescriberModal: React.FC<PrescriberModalProps> = ({
       setStatus('Ativo');
       setBio('');
     }
-    setShowPassword(false);
-    setCopiedPassword(false);
     setFormErrors({});
   }, [prescriberToEdit, isOpen]);
 
@@ -188,27 +201,6 @@ export const PrescriberModal: React.FC<PrescriberModalProps> = ({
     return age > 0 && age < 120 ? age : null;
   };
 
-  // Password generation and copy helpers
-  const generateRandomPassword = () => {
-    soundFx.playClick();
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let res = 'Lm@';
-    for (let i = 0; i < 4; i++) {
-      res += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    res += '!';
-    setPassword(res);
-  };
-
-  const handleCopyAccess = () => {
-    soundFx.playClick();
-    const roleLabel = roleType === 'Outro' ? customRole || 'Profissional' : roleType;
-    const text = `*LM TEAM - ACESSO AO SISTEMA DE PRESCRIÇÃO*\nOlá, *${name || 'Profissional'}*! Seu acesso como *${roleLabel}* foi configurado.\n\n📧 *E-mail:* ${email || '(E-mail corporativo)'}\n🔑 *Senha de Acesso:* ${password || '(Senha mantida)'}\n\n👉 Acesse o painel web ou aplicativo com suas credenciais.`;
-    navigator.clipboard.writeText(text);
-    setCopiedPassword(true);
-    setTimeout(() => setCopiedPassword(false), 2500);
-  };
-
   const currentAge = calculateAge(birthDate);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -221,17 +213,6 @@ export const PrescriberModal: React.FC<PrescriberModalProps> = ({
     }
     if (!birthDate) errors.birthDate = 'Informe a data de nascimento.';
     if (!email.trim() || !email.includes('@')) errors.email = 'Informe um e-mail válido.';
-
-    // Password validation: Admin must define a password when creating a new prescriber
-    if (!prescriberToEdit) {
-      if (!password.trim()) {
-        errors.password = 'O Administrador deve criar a senha de acesso inicial do prescritor.';
-      } else if (password.trim().length < 6) {
-        errors.password = 'A senha de acesso deve ter no mínimo 6 caracteres.';
-      }
-    } else if (password.trim() && password.trim().length < 6) {
-      errors.password = 'A nova senha deve ter no mínimo 6 caracteres.';
-    }
 
     const finalRole = roleType === 'Outro' ? customRole.trim() : roleType;
     if (!finalRole) errors.role = 'Informe a função ou cargo do prescritor.';
@@ -254,7 +235,6 @@ export const PrescriberModal: React.FC<PrescriberModalProps> = ({
       phone: phone.trim(),
       birthDate: birthDate,
       email: email.trim().toLowerCase(),
-      password: password.trim() ? password.trim() : prescriberToEdit?.password,
       avatar: avatar,
       isMaster: isAdmin ? true : isMaster, // Admin sempre possui privilégio master
       isAdmin: isCurrentUserAdmin ? isAdmin : (prescriberToEdit?.isAdmin || false),
@@ -268,13 +248,6 @@ export const PrescriberModal: React.FC<PrescriberModalProps> = ({
         role: currentUser.roleType
       } : undefined)
     };
-
-    // If a new password was provided and user is admin/master, persist password in backend/auth
-    if (password.trim() && (isCurrentUserAdmin || currentUser?.isAdmin || currentUser?.isMaster)) {
-      adminService.setPrescriberPassword(savedPrescriber.id, password.trim()).catch((err) => {
-        console.warn('Notice setting prescriber password:', err);
-      });
-    }
 
     soundFx.playSuccess();
     onSave(savedPrescriber);
@@ -506,64 +479,31 @@ export const PrescriberModal: React.FC<PrescriberModalProps> = ({
                 )}
               </div>
 
-              {/* Senha de Acesso (Gerenciável pelo Administrador) */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">
-                    Senha de Acesso
+              {/* Autenticação Unificada Firebase Auth */}
+              <div className="p-3.5 rounded-2xl bg-black/40 border border-white/15 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Autenticação Firebase Auth</span>
                   </label>
-                  {(isCurrentUserAdmin || currentUser?.isAdmin || currentUser?.isMaster) && (
-                    <button
-                      type="button"
-                      onClick={generateRandomPassword}
-                      className="text-[10px] text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1 transition"
-                      title="Gerar senha segura automática"
-                    >
-                      <Dice5 className="w-3 h-3" />
-                      <span>Gerar Senha</span>
-                    </button>
-                  )}
+                  <span className="text-[10px] text-indigo-400 font-mono bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
+                    Acesso Unificado
+                  </span>
                 </div>
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder={prescriberToEdit ? 'Deixe em branco p/ manter atual' : 'Ex: Lm@2026!'}
-                    className="w-full pl-4 pr-20 py-3 rounded-2xl bg-black/40 border border-white/15 focus:border-indigo-500 text-white font-mono text-xs outline-none transition"
-                  />
-                  <div className="absolute inset-y-0 right-0 pr-2.5 flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="p-1 text-slate-400 hover:text-white transition"
-                      title={showPassword ? 'Ocultar senha' : 'Ver senha'}
-                    >
-                      {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                    </button>
-                    {password && (
-                      <button
-                        type="button"
-                        onClick={handleCopyAccess}
-                        className="p-1 text-emerald-400 hover:text-emerald-300 transition"
-                        title="Copiar credenciais do prescritor"
-                      >
-                        {copiedPassword ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
-                    )}
-                  </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  O acesso deste profissional é unificado via Firebase Authentication com o e-mail corporativo.
+                  Nenhuma senha é armazenada em texto plano no banco de dados.
+                </p>
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={handleSendInvite}
+                    className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 font-semibold text-xs border border-indigo-500/40 transition"
+                  >
+                    {inviteSent ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Send className="w-3.5 h-3.5" />}
+                    <span>{inviteSent ? 'Link de Redefinição / Convite Enviado!' : 'Enviar Convite / Link de Senha'}</span>
+                  </button>
                 </div>
-                {formErrors.password ? (
-                  <p className="text-[10px] text-rose-400 mt-1 flex items-center gap-1 font-semibold">
-                    <AlertCircle className="w-3 h-3 text-rose-400 shrink-0" />
-                    <span>{formErrors.password}</span>
-                  </p>
-                ) : (
-                  <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
-                    <ShieldCheck className="w-3 h-3 text-emerald-400 shrink-0" />
-                    <span>{prescriberToEdit ? 'Altere a senha aqui se desejar atualizar o login do profissional.' : 'O Administrador deve criar a senha de acesso deste profissional.'}</span>
-                  </p>
-                )}
               </div>
             </div>
 

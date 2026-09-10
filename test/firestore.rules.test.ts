@@ -17,25 +17,38 @@ import * as path from 'path';
 
 let testEnv: RulesTestEnvironment;
 
-const PROJECT_ID = 'thermal-tune-blcf1';
+const PROJECT_ID = process.env.GCLOUD_PROJECT || 'demo-lmteam';
 const ADMIN_EMAIL = 'emanuelcairess@gmail.com';
+
+const emulatorHostEnv = process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080';
+const [host, portStr] = emulatorHostEnv.split(':');
+const port = parseInt(portStr || '8080', 10);
 
 describe('LM Team - Testes de Regras de Segurança do Firestore (Zero-Trust RBAC)', () => {
   beforeAll(async () => {
-    try {
-      const rulesPath = path.resolve(process.cwd(), 'firestore.rules');
-      const rules = fs.readFileSync(rulesPath, 'utf8');
+    const rulesPath = path.resolve(process.cwd(), 'firestore.rules');
+    if (!fs.existsSync(rulesPath)) {
+      throw new Error(`Arquivo firestore.rules não encontrado em: ${rulesPath}`);
+    }
+    const rules = fs.readFileSync(rulesPath, 'utf8');
 
+    try {
       testEnv = await initializeTestEnvironment({
         projectId: PROJECT_ID,
         firestore: {
           rules,
-          host: '127.0.0.1',
-          port: 8080
+          host,
+          port
         }
       });
-    } catch {
-      // Emulator not running in current container
+    } catch (err: any) {
+      // FALHAR OBRIGATORIAMENTE quando o emulator obrigatório não iniciar
+      throw new Error(
+        `[Emulator Obrigatório] Falha crítica ao inicializar o Firestore Emulator em ${host}:${port}.\n` +
+        `A suíte de regras de segurança do Firestore exige o emulador ativo em ambiente isolado (demo).\n` +
+        `Certifique-se de executar via: firebase emulators:exec --project ${PROJECT_ID} "vitest run test/firestore.rules.test.ts"\n` +
+        `Erro original: ${err?.message || err}`
+      );
     }
   });
 
@@ -49,10 +62,11 @@ describe('LM Team - Testes de Regras de Segurança do Firestore (Zero-Trust RBAC
     }
   });
 
-  beforeEach(async (ctx) => {
+  beforeEach(async () => {
     if (!testEnv) {
-      ctx.skip();
-      return;
+      throw new Error(
+        'RulesTestEnvironment não inicializado. O emulator obrigatório do Firestore deve estar em execução.'
+      );
     }
     await testEnv.clearFirestore();
 
@@ -116,8 +130,27 @@ describe('LM Team - Testes de Regras de Segurança do Firestore (Zero-Trust RBAC
         name: 'Marcos Silva',
         email: 'atleta1@gmail.com',
         coachId: 'coach_1_uid',
+        nutritionistId: 'nutri_1_uid',
         status: 'Ativo',
         currentWeightKg: 84.5
+      });
+
+      // 4b. Criar Nutricionista 1 (com Atleta 1 vinculado)
+      await db.doc(`users/nutri_1_uid`).set({
+        id: 'nutri_1_uid',
+        email: 'nutri1@lmteam.com',
+        name: 'Dra. Camila Nutri',
+        role: 'nutritionist',
+        assignedAthleteIds: ['athlete_1_uid'],
+        status: 'Ativo'
+      });
+      await db.doc(`prescribers/nutri_1_uid`).set({
+        id: 'nutri_1_uid',
+        name: 'Dra. Camila Nutri',
+        roleType: 'Nutricionista Esportiva',
+        email: 'nutri1@lmteam.com',
+        isMaster: false,
+        status: 'Ativo'
       });
 
       // 5. Criar Atleta 2
@@ -233,6 +266,92 @@ describe('LM Team - Testes de Regras de Segurança do Firestore (Zero-Trust RBAC
           isAdmin: true
         })
       );
+    });
+
+    it('Autocadastro role=athlete com isAdmin=true DEVE SER NEGADO antes de qualquer persistência', async () => {
+      const hackerDb = testEnv.authenticatedContext('hacker_athlete_uid', { email: 'hacker_athlete@gmail.com' }).firestore();
+
+      await assertFails(
+        hackerDb.doc('users/hacker_athlete_uid').set({
+          id: 'hacker_athlete_uid',
+          email: 'hacker_athlete@gmail.com',
+          name: 'Atleta Malicioso',
+          role: 'athlete',
+          isAdmin: true,
+          status: 'Ativo'
+        })
+      );
+    });
+
+    it('Autocadastro com falsificação de prescriberId DEVE SER NEGADO', async () => {
+      const hackerDb = testEnv.authenticatedContext('hacker_presc_uid', { email: 'hacker_presc@gmail.com' }).firestore();
+
+      await assertFails(
+        hackerDb.doc('users/hacker_presc_uid').set({
+          id: 'hacker_presc_uid',
+          email: 'hacker_presc@gmail.com',
+          name: 'Atleta Falso Prescritor',
+          role: 'athlete',
+          prescriberId: 'coach_1_uid',
+          status: 'Ativo'
+        })
+      );
+    });
+
+    it('Autocadastro com falsificação de athleteId ou assignedAthleteIds DEVE SER NEGADO', async () => {
+      const hackerDb = testEnv.authenticatedContext('hacker_links_uid', { email: 'hacker_links@gmail.com' }).firestore();
+
+      // Proíbe fornecimento de athleteId arbitrário no cadastro
+      await assertFails(
+        hackerDb.doc('users/hacker_links_uid').set({
+          id: 'hacker_links_uid',
+          email: 'hacker_links@gmail.com',
+          name: 'Atleta Invasor',
+          role: 'athlete',
+          athleteId: 'athlete_2_uid',
+          status: 'Ativo'
+        })
+      );
+
+      // Proíbe fornecimento de assignedAthleteIds
+      await assertFails(
+        hackerDb.doc('users/hacker_links_uid').set({
+          id: 'hacker_links_uid',
+          email: 'hacker_links@gmail.com',
+          name: 'Atleta Invasor 2',
+          role: 'athlete',
+          assignedAthleteIds: ['athlete_1_uid', 'athlete_2_uid'],
+          status: 'Ativo'
+        })
+      );
+    });
+
+    it('Atleta autenticado NÃO pode alterar seu athleteId para outra pessoa via update', async () => {
+      const athleteDb = testEnv.authenticatedContext('athlete_1_uid', { email: 'atleta1@gmail.com' }).firestore();
+
+      // Tentativa de alterar athleteId para sequestrar os dados de athlete_2_uid
+      await assertFails(
+        athleteDb.doc('users/athlete_1_uid').update({
+          athleteId: 'athlete_2_uid'
+        })
+      );
+
+      // Tentativa de injetar prescriberId via update
+      await assertFails(
+        athleteDb.doc('users/athlete_1_uid').update({
+          prescriberId: 'coach_1_uid'
+        })
+      );
+    });
+
+    it('Usuário com e-mail do admin sem doc oficial em admins/ ou users/ NÃO possui acesso de administrador', async () => {
+      // Usuário autenticado com o e-mail emanuelcairess@gmail.com mas com UID diferente sem doc em admins
+      const impostorDb = testEnv.authenticatedContext('fake_admin_uid', { email: 'emanuelcairess@gmail.com' }).firestore();
+
+      // Não pode listar todos os usuários da coleção /users
+      await assertFails(impostorDb.collection('users').get());
+      // Não pode ler dados de outro atleta
+      await assertFails(impostorDb.doc('athletes/athlete_1_uid').get());
     });
 
     it('Atleta pode atualizar apenas campos permitidos de seu próprio perfil (nome, telefone, bio, avatar)', async () => {
@@ -376,6 +495,71 @@ describe('LM Team - Testes de Regras de Segurança do Firestore (Zero-Trust RBAC
         athlete1Db.doc('prescriptions/workouts/athletes/athlete_1_uid').update({
           splitName: 'Treino Hackeado'
         })
+      );
+    });
+
+    it('MODALIDADE: Coach NÃO PODE prescrever nutrição e Nutricionista NÃO PODE prescrever treino', async () => {
+      const coach1Db = testEnv.authenticatedContext('coach_1_uid', { email: 'coach1@lmteam.com' }).firestore();
+      const nutri1Db = testEnv.authenticatedContext('nutri_1_uid', { email: 'nutri1@lmteam.com' }).firestore();
+
+      // Coach 1 tenta prescrever dieta (nutrition): DEVE FALHAR (somente coach para workouts)
+      await assertFails(
+        coach1Db.doc('prescriptions/nutrition/athletes/athlete_1_uid').set({
+          athleteId: 'athlete_1_uid',
+          calories: 2500,
+          prescribedBy: 'coach_1_uid'
+        })
+      );
+
+      // Nutri 1 PODE prescrever dieta (nutrition)
+      await assertSucceeds(
+        nutri1Db.doc('prescriptions/nutrition/athletes/athlete_1_uid').set({
+          athleteId: 'athlete_1_uid',
+          calories: 2500,
+          prescribedBy: 'nutri_1_uid'
+        })
+      );
+
+      // Nutri 1 tenta prescrever treino (workouts): DEVE FALHAR (somente coach para workouts)
+      await assertFails(
+        nutri1Db.doc('prescriptions/workouts/athletes/athlete_1_uid').set({
+          athleteId: 'athlete_1_uid',
+          splitName: 'Treino B',
+          prescribedBy: 'nutri_1_uid'
+        })
+      );
+    });
+
+    it('LISTAGEM & ISOLAMENTO: Profissional não vinculado NÃO PODE listar prescrições nem atletas de outro vínculo', async () => {
+      const coach1Db = testEnv.authenticatedContext('coach_1_uid', { email: 'coach1@lmteam.com' }).firestore();
+      const coach2Db = testEnv.authenticatedContext('coach_2_uid', { email: 'coach2@lmteam.com' }).firestore();
+
+      // Coach 1 pode listar suas prescrições para Atleta 1
+      await assertSucceeds(
+        coach1Db.collection('prescriptions/workouts/athletes/athlete_1_uid/splits').get()
+      );
+
+      // Coach 2 (não vinculado a Atleta 1) NÃO PODE listar subcoleções ou prescrições de Atleta 1
+      await assertFails(
+        coach2Db.collection('prescriptions/workouts/athletes/athlete_1_uid/splits').get()
+      );
+
+      // Coach 2 NÃO PODE acessar prescrições por nenhum caminho coincidente ou wildcard amplo
+      await assertFails(
+        coach2Db.doc('prescriptions/arbitrary_path/athletes/athlete_1_uid').get()
+      );
+      await assertFails(
+        coach2Db.collection('prescriptions').get()
+      );
+
+      // Listagem de atletas: Coach 1 pode consultar com filtro de vínculo (coachId == 'coach_1_uid')
+      await assertSucceeds(
+        coach1Db.collection('athletes').where('coachId', '==', 'coach_1_uid').get()
+      );
+
+      // Coach 2 NÃO PODE consultar atletas com filtro de outro profissional (coachId == 'coach_1_uid')
+      await assertFails(
+        coach2Db.collection('athletes').where('coachId', '==', 'coach_1_uid').get()
       );
     });
   });

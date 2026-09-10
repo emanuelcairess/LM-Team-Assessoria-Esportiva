@@ -52,7 +52,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
           initial={{ opacity: 1 }}
           exit={{ opacity: 0, scale: 1.04 }}
           transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-          className="fixed inset-0 z-50 flex flex-col items-center justify-between p-6 sm:p-10 select-none overflow-hidden"
+          className="fixed inset-0 z-50 flex flex-col items-center justify-between p-6 sm:p-10 overflow-hidden"
           style={{
             background:
               theme === 'light'

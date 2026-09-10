@@ -4,15 +4,21 @@ import {
   SyncEntityDomain,
   PrescriberProfile,
   AthleteProfile,
-  LibraryExercise
+  LibraryExercise,
+  SupplementItem,
+  NutritionPlan,
+  WorkoutSplit
 } from '../types';
-import { db } from '../lib/firebase';
+import { db, auth } from '../lib/firebase';
 import {
   doc,
+  getDoc,
   setDoc,
   deleteDoc,
   getDocs,
   collection,
+  query,
+  where,
   Firestore
 } from 'firebase/firestore';
 
@@ -91,9 +97,16 @@ export const SYNC_DOMAIN_CONFIG: Record<SyncEntityDomain, DomainPathMapping> = {
     description: 'Prescrição nutricional oficial do atleta'
   },
   prescription_supplement: {
-    getCollectionPath: () => 'prescriptions/supplements/athletes',
-    getDocumentId: (entityId, athleteId) => athleteId || entityId,
-    description: 'Prescrição oficial de suplementação do atleta'
+    getCollectionPath: (athleteId) => `prescriptions/supplements/athletes/${athleteId}/items`,
+    getDocumentId: (entityId, athleteId, payload) => {
+      // Individual document per supplement: strictly avoid using athleteId as documentId
+      const docId = entityId || payload?.id;
+      if (!docId || docId === athleteId) {
+        return payload?.id || `sup_${Date.now()}`;
+      }
+      return docId;
+    },
+    description: 'Item de prescrição oficial de suplementação do atleta'
   }
 };
 
@@ -270,10 +283,23 @@ export type SyncEventListener = (status: CloudSyncStatus, log?: SyncLogEntry) =>
 export const STORAGE_QUEUE_KEY = 'lm_team_checkin_sync_queue_v1';
 export const STORAGE_LOGS_KEY = 'lm_team_sync_logs_v1';
 
+/**
+ * Generates a stable key for grouping mutations and resolving conflicts per entity.
+ */
+export function getEntityKey(
+  domain: SyncEntityDomain,
+  entityId: string,
+  athleteId: string = 'ath_01'
+): string {
+  return `${domain}:${entityId}:${athleteId || 'global'}`;
+}
+
 export class SyncService {
   private isOnline: boolean = true;
   private isSyncing: boolean = false;
   private syncPromise: Promise<SyncFlushResult> | null = null;
+  private hasPendingFlushRequest: boolean = false;
+  private retryTimeoutId: any = null;
   private lastSyncedAt: string | null = null;
   private cloudProvider: 'Supabase' | 'Firestore' = 'Firestore';
   private prescriptionVersion: number = 4;
@@ -437,6 +463,8 @@ export class SyncService {
     this.isOnline = isOnline;
     const timeStr = new Date().toLocaleTimeString('pt-BR');
 
+    this.cancelAutomaticRetry();
+
     if (!previousState && isOnline) {
       const log: SyncLogEntry = {
         id: `log_${Date.now()}`,
@@ -468,6 +496,70 @@ export class SyncService {
     );
   }
 
+  /**
+   * Applies explicit conflict policy (Last-Write-Wins per entity and failure superseding).
+   */
+  private applyConflictPolicyOnEnqueue(newItem: PendingSyncItem, athleteId: string): void {
+    const targetKey = getEntityKey(newItem.domain, newItem.entityId, athleteId);
+
+    const existingIndex = this.queue.findIndex((item) => {
+      let itemAth = 'ath_01';
+      try {
+        const parsed = JSON.parse(item.payloadJson);
+        itemAth = parsed.athleteId || 'ath_01';
+      } catch {}
+      return getEntityKey(item.domain, item.entityId, itemAth) === targetKey;
+    });
+
+    if (existingIndex >= 0) {
+      const existingItem = this.queue[existingIndex];
+
+      // Case 1: Old failure followed by more recent edit (falha antiga seguida de edição mais recente)
+      if ((existingItem.retryCount || 0) > 0 || existingItem.lastError) {
+        if (existingItem.operation === 'INSERT' && newItem.operation === 'UPDATE') {
+          newItem.operation = 'INSERT';
+        }
+        // Remove stale failed mutation, clear its backoff delay and error
+        this.queue.splice(existingIndex, 1);
+        this.queue.push(newItem);
+        return;
+      }
+
+      // Case 2: Offline edits for the same entity (duas edições offline - Last-Write-Wins)
+      if (newItem.operation === 'DELETE') {
+        this.queue.splice(existingIndex, 1);
+        this.queue.push(newItem);
+        return;
+      }
+
+      if (existingItem.operation === 'INSERT' && newItem.operation === 'UPDATE') {
+        newItem.operation = 'INSERT';
+        try {
+          const prevData = JSON.parse(existingItem.payloadJson);
+          const nextData = JSON.parse(newItem.payloadJson);
+          newItem.payloadJson = JSON.stringify({ ...prevData, ...nextData, athleteId });
+        } catch {}
+        this.queue.splice(existingIndex, 1);
+        this.queue.push(newItem);
+        return;
+      }
+
+      if (existingItem.operation === 'UPDATE' && newItem.operation === 'UPDATE') {
+        try {
+          const prevData = JSON.parse(existingItem.payloadJson);
+          const nextData = JSON.parse(newItem.payloadJson);
+          newItem.payloadJson = JSON.stringify({ ...prevData, ...nextData, athleteId });
+        } catch {}
+        this.queue.splice(existingIndex, 1);
+        this.queue.push(newItem);
+        return;
+      }
+    }
+
+    // Default: append to queue in FIFO chronological order
+    this.queue.push(newItem);
+  }
+
   public enqueueMutation(
     domain: SyncEntityDomain,
     entityId: string,
@@ -476,17 +568,34 @@ export class SyncService {
     operation: 'INSERT' | 'UPDATE' | 'DELETE' = 'UPDATE',
     autoFlush: boolean = true
   ): PendingSyncItem {
+    // Envelope operation extraction & sanitization
+    const effectiveOperation: 'INSERT' | 'UPDATE' | 'DELETE' =
+      operation !== 'UPDATE'
+        ? operation
+        : payload?.operation === 'DELETE'
+        ? 'DELETE'
+        : payload?.operation === 'INSERT'
+        ? 'INSERT'
+        : 'UPDATE';
+
+    const cleanPayload =
+      typeof payload === 'object' && payload !== null ? { ...payload } : { raw: payload };
+    if ('operation' in cleanPayload) {
+      delete cleanPayload.operation;
+    }
+
     const newItem: PendingSyncItem = {
       id: `sync_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       entityId,
       domain,
-      operation,
-      payloadJson: JSON.stringify({ ...payload, athleteId }),
+      operation: effectiveOperation,
+      payloadJson: JSON.stringify({ ...cleanPayload, athleteId }),
       createdAt: Date.now(),
       retryCount: 0
     };
 
-    this.queue = [newItem, ...this.queue];
+    // Apply explicit conflict resolution policy per entity
+    this.applyConflictPolicyOnEnqueue(newItem, athleteId);
 
     const timeStr = new Date().toLocaleTimeString('pt-BR');
     const log: SyncLogEntry = {
@@ -495,8 +604,8 @@ export class SyncService {
       type: 'ENQUEUE',
       domain,
       documentId: entityId,
-      message: `Mutação salva localmente e adicionada à fila sync_queue (${domain} - ${operation}).`,
-      payloadSummary: JSON.stringify(payload).substring(0, 80)
+      message: `Mutação salva localmente e adicionada à fila sync_queue (${domain} - ${effectiveOperation}).`,
+      payloadSummary: JSON.stringify(cleanPayload).substring(0, 80)
     };
 
     this.notify(log);
@@ -557,18 +666,54 @@ export class SyncService {
   }
 
   /**
+   * Resolves any in-queue conflicts before batch processing.
+   * If an entity has an older failed item followed by a newer item, the newer item supersedes the failed item.
+   */
+  public resolveEntityConflictsInQueue(): void {
+    const entityLatestMap = new Map<string, { item: PendingSyncItem; index: number }>();
+    const indicesToRemove = new Set<number>();
+
+    for (let i = 0; i < this.queue.length; i++) {
+      const item = this.queue[i];
+      let itemAth = 'ath_01';
+      try {
+        const parsed = JSON.parse(item.payloadJson);
+        itemAth = parsed.athleteId || 'ath_01';
+      } catch {}
+      const key = getEntityKey(item.domain, item.entityId, itemAth);
+
+      if (!entityLatestMap.has(key)) {
+        entityLatestMap.set(key, { item, index: i });
+      } else {
+        const prev = entityLatestMap.get(key)!;
+        if ((prev.item.retryCount || 0) > 0 && item.createdAt >= prev.item.createdAt) {
+          indicesToRemove.add(prev.index);
+          entityLatestMap.set(key, { item, index: i });
+        }
+      }
+    }
+
+    if (indicesToRemove.size > 0) {
+      this.queue = this.queue.filter((_, idx) => !indicesToRemove.has(idx));
+    }
+  }
+
+  /**
    * Flushes the pending queue to Firestore with controlled individual confirmation,
-   * exponential backoff for failed writes, and exact queue removal of confirmed items only.
+   * continuous processing of newly arrived pendings, and automatic resumption of retries.
    */
   public async flushPendingQueueToFirestore(options?: {
     forceRetry?: boolean;
     useBatch?: boolean;
   }): Promise<SyncFlushResult> {
-    if (this.isSyncing && this.syncPromise) {
-      return this.syncPromise;
+    if (this.isSyncing) {
+      this.hasPendingFlushRequest = true;
+      if (this.syncPromise) {
+        return this.syncPromise;
+      }
     }
 
-    this.syncPromise = this.performFlush(options);
+    this.syncPromise = this.runFlushLoop(options);
     try {
       const result = await this.syncPromise;
       return result;
@@ -578,7 +723,70 @@ export class SyncService {
     }
   }
 
-  private async performFlush(options?: {
+  /**
+   * Loops while there are eligible items, processing batches sequentially and draining new pendings.
+   */
+  private async runFlushLoop(options?: {
+    forceRetry?: boolean;
+    useBatch?: boolean;
+  }): Promise<SyncFlushResult> {
+    if (!this.isOnline) {
+      return {
+        success: false,
+        syncedCount: 0,
+        failedCount: this.queue.length,
+        totalAttempted: 0,
+        results: []
+      };
+    }
+
+    this.isSyncing = true;
+    const allResults: SyncItemResult[] = [];
+    let totalSynced = 0;
+    let finalFailedCount = 0;
+    let totalAttempted = 0;
+
+    try {
+      while (this.isOnline) {
+        this.hasPendingFlushRequest = false;
+        const batchResult = await this.performFlushBatch(options);
+
+        totalSynced += batchResult.syncedCount;
+        finalFailedCount = batchResult.failedCount;
+        totalAttempted += batchResult.totalAttempted;
+        allResults.push(...batchResult.results);
+
+        if (!this.isOnline) break;
+
+        // Check if new eligible items arrived during this batch
+        const now = Date.now();
+        const hasEligibleRemaining = this.queue.some((item) => {
+          if (options?.forceRetry) return true;
+          return !item.nextRetryAt || now >= item.nextRetryAt;
+        });
+
+        if (!hasEligibleRemaining && !this.hasPendingFlushRequest) {
+          break;
+        }
+      }
+    } finally {
+      this.isSyncing = false;
+      this.scheduleAutomaticRetry();
+    }
+
+    return {
+      success: finalFailedCount === 0 && (totalSynced > 0 || totalAttempted === 0),
+      syncedCount: totalSynced,
+      failedCount: finalFailedCount,
+      totalAttempted,
+      results: allResults
+    };
+  }
+
+  /**
+   * Executes a single batch of eligible items in strict chronological order per entity.
+   */
+  private async performFlushBatch(options?: {
     forceRetry?: boolean;
     useBatch?: boolean;
   }): Promise<SyncFlushResult> {
@@ -624,7 +832,9 @@ export class SyncService {
       };
     }
 
-    this.isSyncing = true;
+    // Resolve any pending conflicts in queue before batch execution
+    this.resolveEntityConflictsInQueue();
+
     const nowTimestamp = Date.now();
     const timeStr = new Date().toLocaleTimeString('pt-BR');
 
@@ -645,7 +855,6 @@ export class SyncService {
     }
 
     if (eligibleItems.length === 0) {
-      this.isSyncing = false;
       this.notify({
         id: `log_${Date.now()}`,
         timestamp: timeStr,
@@ -655,11 +864,14 @@ export class SyncService {
       return {
         success: true,
         syncedCount: 0,
-        failedCount: 0,
+        failedCount: skippedItems.length,
         totalAttempted: 0,
         results: []
       };
     }
+
+    // Process mutations in chronological order per entity (FIFO)
+    eligibleItems.sort((a, b) => a.createdAt - b.createdAt);
 
     this.notify({
       id: `log_${Date.now()}`,
@@ -755,7 +967,6 @@ export class SyncService {
 
     // REMOVE ONLY CONFIRMED ITEMS FROM QUEUE
     this.queue = this.queue.filter((item) => !confirmedItemIds.has(item.id));
-    this.isSyncing = false;
     this.lastSyncedCount = syncedCount;
 
     if (syncedCount > 0) {
@@ -768,7 +979,7 @@ export class SyncService {
         id: `log_${Date.now()}`,
         timestamp: new Date().toLocaleTimeString('pt-BR'),
         type: 'SYNC_SUCCESS',
-        message: `Sincronização 100% confirmada! ${syncedCount} documento(s) gravados com sucesso no Firestore.`,
+        message: `Sincronização confirmada! ${syncedCount} documento(s) gravados com sucesso no Firestore.`,
         syncedCount,
         errorCount: 0
       };
@@ -807,6 +1018,227 @@ export class SyncService {
   }
 
   /**
+   * Schedules automatic resumption of retries when eligible items reach their backoff expiration.
+   */
+  public scheduleAutomaticRetry(): void {
+    if (this.retryTimeoutId) {
+      clearTimeout(this.retryTimeoutId);
+      this.retryTimeoutId = null;
+    }
+
+    if (!this.isOnline || this.queue.length === 0) {
+      return;
+    }
+
+    const now = Date.now();
+    const itemsWaiting = this.queue.filter(
+      (item) => (item.retryCount || 0) > 0 && item.nextRetryAt && item.nextRetryAt > now
+    );
+
+    if (itemsWaiting.length === 0) {
+      return;
+    }
+
+    const earliestRetryAt = Math.min(...itemsWaiting.map((item) => item.nextRetryAt!));
+    const delayMs = Math.max(50, earliestRetryAt - now);
+
+    const timeStr = new Date(earliestRetryAt).toLocaleTimeString('pt-BR');
+    this.notify({
+      id: `log_${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString('pt-BR'),
+      type: 'RETRY_SCHEDULED',
+      message: `Retomada automática de retry agendada para ${timeStr} (~${Math.ceil(delayMs / 1000)}s) para ${itemsWaiting.length} item(ns).`
+    });
+
+    this.retryTimeoutId = setTimeout(() => {
+      this.retryTimeoutId = null;
+      if (this.isOnline && this.queue.length > 0) {
+        this.flushPendingQueueToFirestore().catch((err) => {
+          console.warn('Automatic retry flush notice:', err);
+        });
+      }
+    }, delayMs);
+  }
+
+  /**
+   * Cancels any pending automatic retry timer.
+   */
+  public cancelAutomaticRetry(): void {
+    if (this.retryTimeoutId) {
+      clearTimeout(this.retryTimeoutId);
+      this.retryTimeoutId = null;
+    }
+  }
+
+  /**
+   * Carrega todos os suplementos prescritos para o atleta do Firestore.
+   * Coleção: prescriptions/supplements/athletes/{athleteId}/items
+   */
+  public async loadSupplementsFromFirestore(athleteId: string): Promise<SupplementItem[]> {
+    const currentDb = this.getEffectiveDb();
+    if (!currentDb || !athleteId) return [];
+
+    try {
+      const collectionPath = `prescriptions/supplements/athletes/${athleteId}/items`;
+      const snap = await getDocs(collection(currentDb, collectionPath));
+      const list: SupplementItem[] = [];
+      snap.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (data) {
+          list.push({ id: docSnap.id, ...data } as SupplementItem);
+        }
+      });
+      return list;
+    } catch (err) {
+      console.warn(`Could not load supplements for athlete ${athleteId} from Firestore:`, err);
+      return [];
+    }
+  }
+
+  /**
+   * Salva individualmente um suplemento prescrito no Firestore.
+   */
+  public async saveSupplementToFirestore(athleteId: string, supplement: SupplementItem): Promise<boolean> {
+    const currentDb = this.getEffectiveDb();
+    if (!currentDb || !athleteId || !supplement.id) return false;
+
+    const validation = validateFirestorePath(
+      `prescriptions/supplements/athletes/${athleteId}/items`,
+      supplement.id
+    );
+    if (!validation.isValid) {
+      console.warn('Invalid supplement path:', validation.error);
+      return false;
+    }
+
+    try {
+      await setDoc(doc(currentDb, validation.collectionPath, validation.documentId), supplement, { merge: true });
+      this.notify({
+        id: `log_${Date.now()}`,
+        timestamp: new Date().toLocaleTimeString('pt-BR'),
+        type: 'SYNC_SUCCESS',
+        message: `Suplemento "${supplement.name}" salvo no Firestore para o atleta ${athleteId}.`
+      });
+      return true;
+    } catch (err) {
+      console.warn(`Error saving supplement ${supplement.id} to Firestore:`, err);
+      return false;
+    }
+  }
+
+  /**
+   * Remove individualmente um suplemento prescrito no Firestore.
+   */
+  public async deleteSupplementFromFirestore(athleteId: string, supplementId: string): Promise<boolean> {
+    const currentDb = this.getEffectiveDb();
+    if (!currentDb || !athleteId || !supplementId) return false;
+
+    const validation = validateFirestorePath(
+      `prescriptions/supplements/athletes/${athleteId}/items`,
+      supplementId
+    );
+    if (!validation.isValid) {
+      console.warn('Invalid supplement path for deletion:', validation.error);
+      return false;
+    }
+
+    try {
+      await deleteDoc(doc(currentDb, validation.collectionPath, validation.documentId));
+      this.notify({
+        id: `log_${Date.now()}`,
+        timestamp: new Date().toLocaleTimeString('pt-BR'),
+        type: 'SYNC_SUCCESS',
+        message: `Suplemento ID "${supplementId}" removido da prescrição do atleta ${athleteId}.`
+      });
+      return true;
+    } catch (err) {
+      console.warn(`Error deleting supplement ${supplementId} from Firestore:`, err);
+      return false;
+    }
+  }
+
+  /**
+   * Carrega o plano nutricional do atleta do Firestore.
+   * Coleção: prescriptions/nutrition/athletes, docId: athleteId
+   */
+  public async loadNutritionPlanFromFirestore(athleteId: string): Promise<NutritionPlan | null> {
+    const currentDb = this.getEffectiveDb();
+    if (!currentDb || !athleteId) return null;
+
+    try {
+      const snap = await getDoc(doc(currentDb, 'prescriptions/nutrition/athletes', athleteId));
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data && Array.isArray(data.meals)) {
+          return data as NutritionPlan;
+        }
+      }
+      return null;
+    } catch (err) {
+      console.warn(`Could not load nutrition plan for athlete ${athleteId} from Firestore:`, err);
+      return null;
+    }
+  }
+
+  /**
+   * Salva o plano nutricional do atleta no Firestore.
+   */
+  public async saveNutritionPlanToFirestore(athleteId: string, plan: NutritionPlan): Promise<boolean> {
+    const currentDb = this.getEffectiveDb();
+    if (!currentDb || !athleteId || !plan) return false;
+
+    try {
+      await setDoc(doc(currentDb, 'prescriptions/nutrition/athletes', athleteId), plan, { merge: true });
+      return true;
+    } catch (err) {
+      console.warn(`Error saving nutrition plan for athlete ${athleteId} to Firestore:`, err);
+      return false;
+    }
+  }
+
+  /**
+   * Carrega as divisões de treino (workouts) do atleta do Firestore.
+   * Coleção: prescriptions/workouts/athletes, docId: athleteId
+   */
+  public async loadWorkoutSplitsFromFirestore(athleteId: string): Promise<WorkoutSplit[] | null> {
+    const currentDb = this.getEffectiveDb();
+    if (!currentDb || !athleteId) return null;
+
+    try {
+      const snap = await getDoc(doc(currentDb, 'prescriptions/workouts/athletes', athleteId));
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data && Array.isArray(data.splits)) {
+          return data.splits as WorkoutSplit[];
+        }
+        if (Array.isArray(data)) {
+          return data as WorkoutSplit[];
+        }
+      }
+      return null;
+    } catch (err) {
+      console.warn(`Could not load workouts for athlete ${athleteId} from Firestore:`, err);
+      return null;
+    }
+  }
+
+  /**
+   * Salva as divisões de treino do atleta no Firestore.
+   */
+  public async saveWorkoutSplitsToFirestore(athleteId: string, splits: WorkoutSplit[]): Promise<boolean> {
+    const currentDb = this.getEffectiveDb();
+    if (!currentDb || !athleteId || !splits) return false;
+
+    try {
+      await setDoc(doc(currentDb, 'prescriptions/workouts/athletes', athleteId), { splits, athleteId }, { merge: true });
+      return true;
+    } catch (err) {
+      console.warn(`Error saving workouts for athlete ${athleteId} to Firestore:`, err);
+      return false;
+    }
+  }
+
+  /**
    * Load prescribers from Firestore
    */
   public async loadPrescribersFromFirestore(): Promise<PrescriberProfile[]> {
@@ -829,23 +1261,89 @@ export class SyncService {
   }
 
   /**
-   * Load athletes from Firestore
+   * Carrega atletas do Firestore alinhando as consultas estritamente aos vínculos autorizados.
+   * Regra: Profissionais sem privilégio administrativo realizam consultas filtradas por vínculos
+   * (coachId, nutritionistId, doctorId ou assignedPrescriberIds), evitando consultas amplas desautorizadas.
    */
-  public async loadAthletesFromFirestore(): Promise<AthleteProfile[]> {
+  public async loadAthletesFromFirestore(options?: {
+    uid?: string;
+    role?: string;
+    isAdmin?: boolean;
+    athleteId?: string;
+  }): Promise<AthleteProfile[]> {
     const currentDb = this.getEffectiveDb();
     if (!currentDb) return [];
+
+    const currentUser = auth?.currentUser;
+    const callerUid = options?.uid || currentUser?.uid;
+    const isAdmin = Boolean(options?.isAdmin);
+    const callerRole = options?.role || 'athlete';
+
     try {
-      const snap = await getDocs(collection(currentDb, 'athletes'));
-      const list: AthleteProfile[] = [];
-      snap.forEach((docSnap) => {
-        const data = docSnap.data();
-        if (data && data.id) {
-          list.push(data as AthleteProfile);
+      // 1. Administrador pode consultar a coleção global completa
+      if (isAdmin) {
+        const snap = await getDocs(collection(currentDb, 'athletes'));
+        const list: AthleteProfile[] = [];
+        snap.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (data && data.id) {
+            list.push(data as AthleteProfile);
+          }
+        });
+        return list;
+      }
+
+      // 2. Se não houver UID de chamador autenticado, retorna vazio
+      if (!callerUid) {
+        return [];
+      }
+
+      const athletesMap = new Map<string, AthleteProfile>();
+
+      // 3. Atleta comum: consulta apenas seu próprio perfil
+      if (callerRole === 'athlete') {
+        const q = query(collection(currentDb, 'athletes'), where('id', '==', callerUid));
+        const snap = await getDocs(q);
+        snap.forEach((docSnap) => {
+          const data = docSnap.data() as Record<string, any>;
+          if (data && data.id) athletesMap.set(data.id, data as AthleteProfile);
+        });
+        return Array.from(athletesMap.values());
+      }
+
+      // 4. Profissionais (Coach, Nutricionista, Médico): Consultas direcionadas por campos relacionais
+      const queries = [];
+
+      if (callerRole === 'coach') {
+        queries.push(query(collection(currentDb, 'athletes'), where('coachId', '==', callerUid)));
+      } else if (callerRole === 'nutritionist') {
+        queries.push(query(collection(currentDb, 'athletes'), where('nutritionistId', '==', callerUid)));
+      } else if (callerRole === 'doctor') {
+        queries.push(query(collection(currentDb, 'athletes'), where('doctorId', '==', callerUid)));
+      }
+
+      // Consulta complementar por vínculos atribuídos na lista assignedPrescriberIds
+      queries.push(
+        query(collection(currentDb, 'athletes'), where('assignedPrescriberIds', 'array-contains', callerUid))
+      );
+
+      for (const q of queries) {
+        try {
+          const snap = await getDocs(q);
+          snap.forEach((docSnap) => {
+            const data = docSnap.data() as Record<string, any>;
+            if (data && data.id) {
+              athletesMap.set(data.id, data as AthleteProfile);
+            }
+          });
+        } catch (e) {
+          // Ignora erros de consultas individuais que possam não ter índice ou retornar vazio
         }
-      });
-      return list;
+      }
+
+      return Array.from(athletesMap.values());
     } catch (err) {
-      console.warn('Could not load athletes from Firestore:', err);
+      console.warn('Could not load athletes from Firestore with authorized link queries:', err);
       return [];
     }
   }
@@ -1049,9 +1547,17 @@ export class SyncService {
   }
 
   /**
+   * Get current queue copy
+   */
+  public getQueue(): PendingSyncItem[] {
+    return [...this.queue];
+  }
+
+  /**
    * Clear the pending queue manually
    */
   public clearQueue() {
+    this.cancelAutomaticRetry();
     this.queue = [];
     this.notify({
       id: `log_${Date.now()}`,

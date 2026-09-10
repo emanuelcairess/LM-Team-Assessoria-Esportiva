@@ -14,6 +14,7 @@ import {
   Save,
   X,
   Shield,
+  ShieldCheck,
   Stethoscope,
   Phone,
   KeyRound,
@@ -177,9 +178,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   <Phone className="w-3 h-3 text-cyan-400" />
                   <span>ID / Tel: {athlete.phone || '(11) 98765-4321'}</span>
                 </span>
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-blue-500/15 border border-blue-500/30 text-blue-300 font-mono text-[11px]">
-                  <KeyRound className="w-3 h-3 text-blue-400" />
-                  <span>Senha Prescritor: {athlete.accessPassword || 'lmteam2026'}</span>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-mono text-[11px]">
+                  <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                  <span>Acesso: Firebase Auth</span>
                 </span>
               </div>
             </div>

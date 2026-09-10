@@ -118,14 +118,14 @@ describe('SyncService & Firestore Integration Tests', () => {
 
       const supplementRes = resolveFirestorePathForDomain(
         'prescription_supplement',
+        'sup_creatina_01',
         'ath_01',
-        'ath_01',
-        { athleteId: 'ath_01' }
+        { id: 'sup_creatina_01', athleteId: 'ath_01' }
       );
       expect(supplementRes.isValid).toBe(true);
-      expect(supplementRes.fullPath).toBe('prescriptions/supplements/athletes/ath_01');
-      expect(supplementRes.segments).toEqual(['prescriptions', 'supplements', 'athletes', 'ath_01']);
-      expect(supplementRes.segments.length).toBe(4);
+      expect(supplementRes.fullPath).toBe('prescriptions/supplements/athletes/ath_01/items/sup_creatina_01');
+      expect(supplementRes.segments).toEqual(['prescriptions', 'supplements', 'athletes', 'ath_01', 'items', 'sup_creatina_01']);
+      expect(supplementRes.segments.length).toBe(6);
     });
 
     it('deve mapear check-ins de séries, refeições e suplementos para subcoleções do atleta', () => {

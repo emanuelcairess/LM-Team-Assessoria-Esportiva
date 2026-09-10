@@ -4,6 +4,7 @@ import { RefreshCw, X, Check, ArrowRight, Scale, Info, Sparkles } from 'lucide-r
 import { FoodItem } from '../types';
 import { FOOD_SUBSTITUTIONS_DATABASE } from '../data/mockData';
 import { soundFx } from '../utils/audio';
+import { useAccessibleModal } from '../hooks/useAccessibleModal';
 
 interface SubstitutionModalProps {
   isOpen: boolean;
@@ -165,23 +166,35 @@ export const SubstitutionModal: React.FC<SubstitutionModalProps> = ({
     onClose();
   };
 
+  const { modalRef } = useAccessibleModal({ isOpen, onClose });
+
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md"
+        role="presentation"
+        onClick={onClose}
+      >
         <motion.div
+          ref={modalRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="substitution-title"
+          tabIndex={-1}
+          onClick={(e) => e.stopPropagation()}
           initial={{ opacity: 0, scale: 0.92, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.92, y: 15 }}
-          className="relative w-full max-w-lg rounded-3xl modal-liquid-glass border border-white/15 p-6 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
+          className="relative w-full max-w-lg rounded-3xl modal-liquid-glass border border-white/15 p-6 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col focus:outline-none"
         >
           {/* Header */}
           <div className="flex items-center justify-between pb-4 border-b border-white/10">
             <div className="flex items-center gap-2.5">
               <div className="p-2 rounded-xl bg-emerald-600/20 text-emerald-400 border border-emerald-500/30">
-                <RefreshCw className="w-5 h-5 animate-spin-slow" />
+                <RefreshCw className="w-5 h-5 animate-spin-slow" aria-hidden="true" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-white">Calculadora de Trocas Inteligentes</h3>
+                <h3 id="substitution-title" className="text-base font-bold text-white">Calculadora de Trocas Inteligentes</h3>
                 <p className="text-xs text-slate-400">Equivalência calórica e de macronutrientes da planilha LM</p>
               </div>
             </div>

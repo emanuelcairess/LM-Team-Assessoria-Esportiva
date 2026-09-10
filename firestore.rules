@@ -58,11 +58,14 @@ service cloud.firestore {
     }
 
     /// Verifica se o usuário é Administrador Geral do Sistema
+    /// FONTE CENTRALIZADA DE AUTORIZAÇÃO: Registro em /admins/{uid}, /users/{uid} (role=admin e isAdmin=true)
+    /// ou Custom Claim 'admin' emitido pelo Admin SDK.
+    /// NUNCA concede privilégios automaticamente por endereço de e-mail.
     function isAdmin() {
       return isSignedIn() && (
-        request.auth.token.email == 'emanuelcairess@gmail.com' ||
-        (hasUserDoc() && getUserData().role == 'admin') ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (hasUserDoc() && getUserData().role == 'admin' && getUserData().isAdmin == true) ||
+        (request.auth.token.get('admin', false) == true)
       );
     }
 
@@ -121,8 +124,72 @@ service cloud.firestore {
       );
     }
 
+    /// Verifica se o coach autenticado está explicitamente vinculado ao Atleta
+    function isLinkedCoach(athleteId) {
+      return isSignedIn() && (
+        isAdmin() ||
+        (isCoach() && (
+          // 1. Verificação na lista assignedAthleteIds do usuário coach
+          (hasUserDoc() && getUserData().assignedAthleteIds is list && athleteId in getUserData().assignedAthleteIds) ||
+          // 2. Verificação nos campos diretos do atleta (coachId ou assignedPrescriberIds)
+          (exists(/databases/$(database)/documents/athletes/$(athleteId)) && (
+            get(/databases/$(database)/documents/athletes/$(athleteId)).data.coachId == request.auth.uid ||
+            (get(/databases/$(database)/documents/athletes/$(athleteId)).data.assignedPrescriberIds is list &&
+             get(/databases/$(database)/documents/athletes/$(athleteId)).data.assignedPrescriberIds.hasAny([request.auth.uid]))
+          ))
+        ))
+      );
+    }
+
+    /// Verifica se o nutricionista autenticado está explicitamente vinculado ao Atleta
+    function isLinkedNutritionist(athleteId) {
+      return isSignedIn() && (
+        isAdmin() ||
+        (isNutritionist() && (
+          // 1. Verificação na lista assignedAthleteIds do usuário nutricionista
+          (hasUserDoc() && getUserData().assignedAthleteIds is list && athleteId in getUserData().assignedAthleteIds) ||
+          // 2. Verificação nos campos diretos do atleta (nutritionistId ou assignedPrescriberIds)
+          (exists(/databases/$(database)/documents/athletes/$(athleteId)) && (
+            get(/databases/$(database)/documents/athletes/$(athleteId)).data.nutritionistId == request.auth.uid ||
+            (get(/databases/$(database)/documents/athletes/$(athleteId)).data.assignedPrescriberIds is list &&
+             get(/databases/$(database)/documents/athletes/$(athleteId)).data.assignedPrescriberIds.hasAny([request.auth.uid]))
+          ))
+        ))
+      );
+    }
+
+    /// Verifica se o médico ou nutricionista autenticado está vinculado ao Atleta para manipulados/suplementação
+    function isLinkedSupplementPrescriber(athleteId) {
+      return isSignedIn() && (
+        isAdmin() ||
+        ((isDoctor() || isNutritionist()) && (
+          // 1. Verificação na lista assignedAthleteIds do prescritor
+          (hasUserDoc() && getUserData().assignedAthleteIds is list && athleteId in getUserData().assignedAthleteIds) ||
+          // 2. Verificação nos campos diretos do atleta (doctorId, nutritionistId ou assignedPrescriberIds)
+          (exists(/databases/$(database)/documents/athletes/$(athleteId)) && (
+            get(/databases/$(database)/documents/athletes/$(athleteId)).data.doctorId == request.auth.uid ||
+            get(/databases/$(database)/documents/athletes/$(athleteId)).data.nutritionistId == request.auth.uid ||
+            (get(/databases/$(database)/documents/athletes/$(athleteId)).data.assignedPrescriberIds is list &&
+             get(/databases/$(database)/documents/athletes/$(athleteId)).data.assignedPrescriberIds.hasAny([request.auth.uid]))
+          ))
+        ))
+      );
+    }
+
+    /// Valida acesso estrito por modalidade de prescrição (workouts, nutrition, supplements)
+    /// Garante que somente profissionais com papel compatível e vínculo ativo possam acessar/modificar
+    function canAccessPrescriptionModality(prescriptionType, athleteId, isWrite) {
+      return prescriptionType == 'workouts'
+        ? (isWrite ? isLinkedCoach(athleteId) : (isAthleteOwner(athleteId) || isLinkedCoach(athleteId)))
+        : prescriptionType == 'nutrition'
+        ? (isWrite ? isLinkedNutritionist(athleteId) : (isAthleteOwner(athleteId) || isLinkedNutritionist(athleteId)))
+        : prescriptionType == 'supplements'
+        ? (isWrite ? isLinkedSupplementPrescriber(athleteId) : (isAthleteOwner(athleteId) || isLinkedSupplementPrescriber(athleteId)))
+        : isAdmin();
+    }
+
     // ==========================================================================
-    // 2. REGRAS PARA PERFIS DE USUÁRIO: /users/{uid}
+    // 2. REGRAS PARA PERFIS DE USUÁRIO: /users/{userId}
     // ==========================================================================
     match /users/{userId} {
       // Leitura: O próprio usuário, Administrador ou profissional vinculado ao atleta
@@ -135,22 +202,36 @@ service cloud.firestore {
       // Listagem: Apenas Administradores
       allow list: if isAdmin();
 
-      // Criação de perfil:
-      // - Administrador pode criar qualquer perfil e role
-      // - Usuário novo autenticado pode criar APENAS seu próprio perfil com role 'athlete' (previne escalação)
+      // Criação de perfil (Autocadastro com Lista Explícita de Campos Permitidos):
+      // - Administrador pode criar qualquer perfil
+      // - Usuário novo autenticado pode criar APENAS seu próprio perfil com role 'athlete'
+      // - PROÍBE expressamente: isAdmin, isMaster, athleteId, prescriberId e assignedAthleteIds fornecidos livremente pelo usuário
+      // - Vínculos e privilégios devem ser definidos APENAS por operação administrativa autorizada
       allow create: if isSignedIn() && isValidId(userId) && (
         isAdmin() ||
         (
           request.auth.uid == userId &&
-          incoming().role == 'athlete' &&
           incoming().id == userId &&
-          incoming().email is string
+          incoming().email is string &&
+          incoming().role == 'athlete' &&
+          // Proíbe campos de privilégio e vínculos fornecidos livremente pelo usuário
+          !incoming().keys().hasAny([
+            'isAdmin', 'isMaster', 'athleteId', 'prescriberId', 'assignedAthleteIds'
+          ]) &&
+          // Lista explícita de campos permitidos no autocadastro (impede qualquer campo estranho/arbitrário)
+          incoming().diff({}).affectedKeys().hasOnly([
+            'id', 'email', 'name', 'role', 'status',
+            'createdAt', 'updatedAt', 'phone', 'avatar',
+            'birthDate', 'cpf', 'bio', 'gender'
+          ])
         )
       );
 
       // Atualização de perfil:
       // - Administrador: atualização irrestrita de roles e atribuições
-      // - Próprio usuário: pode atualizar APENAS campos cadastrais não-sensíveis (bloqueia alteração de role/admin)
+      // - Próprio usuário: pode atualizar APENAS campos cadastrais não-sensíveis
+      // - athleteId REMOVIDO expressamente da lista de campos editáveis pelo próprio usuário
+      // - Proíbe expressamente adulteração de privilégios e vínculos
       allow update: if isSignedIn() && (
         isAdmin() ||
         (
@@ -158,10 +239,16 @@ service cloud.firestore {
           // Garante que o role e status não sofram adulteração pelo cliente comum
           incoming().role == existing().role &&
           (!existing().keys().hasAny(['isAdmin']) || incoming().isAdmin == existing().isAdmin) &&
+          (!existing().keys().hasAny(['isMaster']) || incoming().isMaster == existing().isMaster) &&
+          // Proíbe alteração arbitrária de vínculos e privilégios
+          !incoming().diff(existing()).affectedKeys().hasAny([
+            'isAdmin', 'isMaster', 'athleteId', 'prescriberId', 'assignedAthleteIds', 'role', 'id', 'email'
+          ]) &&
+          // Lista explícita de campos editáveis pelo próprio usuário (athleteId REMOVIDO)
           incoming().diff(existing()).affectedKeys().hasOnly([
             'name', 'phone', 'avatar', 'birthDate', 'cpf', 'bio',
-            'athleteId', 'updatedAt', 'accessPassword', 'passwordChangedAt',
-            'requiresPasswordChange', 'gender'
+            'gender', 'updatedAt', 'accessPassword', 'passwordChangedAt',
+            'requiresPasswordChange'
           ])
         )
       );
@@ -180,8 +267,18 @@ service cloud.firestore {
         isLinkedProfessional(athleteId)
       );
 
-      // Listagem: Administradores e profissionais de saúde autorizados
-      allow list: if isProfessional();
+      // Listagem: Restrita estritamente aos vínculos autorizados e Administrador (Zero consulta ampla)
+      allow list: if isSignedIn() && (
+        isAdmin() ||
+        (isProfessional() && (
+          resource.data.coachId == request.auth.uid ||
+          resource.data.nutritionistId == request.auth.uid ||
+          resource.data.doctorId == request.auth.uid ||
+          (resource.data.assignedPrescriberIds is list && resource.data.assignedPrescriberIds.hasAny([request.auth.uid]))
+        )) ||
+        (resource.data.id == request.auth.uid) ||
+        (hasUserDoc() && getUserData().athleteId == resource.data.id)
+      );
 
       // Criação: Apenas Administradores e Profissionais da Assessoria
       allow create: if isProfessional() && isValidId(athleteId);
@@ -245,24 +342,31 @@ service cloud.firestore {
 
     // ==========================================================================
     // 4. REGRAS PARA PRESCRIÇÕES OFICIAIS (Treinos, Nutrição e Manipulados)
-    // /prescriptions/{type}/athletes/{athleteId} ou subcoleções
+    // /prescriptions/{prescriptionType}/athletes/{athleteId}
+    // ACESSO ESTRITAMENTE VINCULADO E AUTORIZADO POR MODALIDADE (ZERO ACESSO AMPLO)
     // ==========================================================================
     match /prescriptions/{prescriptionType}/athletes/{athleteId} {
-      // Leitura: O atleta dono da prescrição, profissional vinculado ou admin
-      allow read: if isSignedIn() && (
-        isAthleteOwner(athleteId) ||
-        isLinkedProfessional(athleteId)
-      );
+      // Leitura: O atleta dono da prescrição (somente-leitura) ou profissional com vínculo e papel na modalidade
+      allow get: if isSignedIn() && isValidId(athleteId) && canAccessPrescriptionModality(prescriptionType, athleteId, false);
 
-      // Criação, Edição e Exclusão: Estritamente reservado para Profissionais Vinculados e Admin
-      // (Atletas têm acesso estritamente SOMENTE-LEITURA às suas prescrições oficiais)
-      allow create, update, delete: if isLinkedProfessional(athleteId);
+      // Listagem: Restrita aos vínculos autorizados e admins
+      allow list: if isSignedIn() && isValidId(athleteId) && canAccessPrescriptionModality(prescriptionType, athleteId, false);
+
+      // Criação, Edição e Exclusão: Estritamente reservada para o Profissional Vinculado e Autorizado na Modalidade (ou Admin)
+      // Atletas são estritamente PROIBIDOS de modificar suas prescrições oficiais
+      allow create, update, delete: if isSignedIn() && isValidId(athleteId) && canAccessPrescriptionModality(prescriptionType, athleteId, true);
+
+      // Subcoleções aninhadas sob a prescrição oficial (ex: exercícios, divisões, refeições)
+      match /{allSubPaths=**} {
+        allow get, list: if isSignedIn() && isValidId(athleteId) && canAccessPrescriptionModality(prescriptionType, athleteId, false);
+        allow create, update, delete: if isSignedIn() && isValidId(athleteId) && canAccessPrescriptionModality(prescriptionType, athleteId, true);
+      }
     }
 
-    // Regra de segurança para caminhos aninhados em /prescriptions/{allPaths=**}
+    // Bloqueio Total de Acesso Amplo em /prescriptions:
+    // Nenhum profissional não vinculado ou desautorizado consegue ler ou modificar por qualquer caminho coincidente
     match /prescriptions/{allPaths=**} {
-      allow read: if isSignedIn() && isProfessional();
-      allow write: if isProfessional();
+      allow read, write: if false;
     }
 
     // ==========================================================================

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Bell,
@@ -42,6 +42,11 @@ import { INITIAL_EXERCISE_LIBRARY } from './data/exerciseLibrary';
 import { soundFx } from './utils/audio';
 import { syncService, SyncLogEntry } from './services/syncService';
 import { adminService } from './services/adminService';
+import {
+  getModuleFromHash,
+  getHashForModule,
+  getDocumentTitle
+} from './config/navigation';
 
 // Components
 import { Header } from './components/Header';
@@ -51,25 +56,43 @@ import { CommandPaletteModal } from './components/CommandPaletteModal';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
 import { RestTimerModal } from './components/RestTimerModal';
 import { SubstitutionModal } from './components/SubstitutionModal';
-import { PdfReportModal } from './components/PdfReportModal';
-import { RoomSchemaModal } from './components/RoomSchemaModal';
-import { InstallAppModal } from './components/InstallAppModal';
 import { SplashScreen } from './components/SplashScreen';
-import { BrandAssetsModal } from './components/BrandAssetsModal';
-import { ChangePasswordModal } from './components/ChangePasswordModal';
+
+// Hooks
+import { useThemeMode } from './hooks/useThemeMode';
+import { useAthletePlans } from './hooks/useAthletePlans';
+import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
+
+// Lazy Loaded Heavy Modals
+const PdfReportModal = React.lazy(() => import('./components/PdfReportModal').then((m) => ({ default: m.PdfReportModal })));
+const RoomSchemaModal = React.lazy(() => import('./components/RoomSchemaModal').then((m) => ({ default: m.RoomSchemaModal })));
+const InstallAppModal = React.lazy(() => import('./components/InstallAppModal').then((m) => ({ default: m.InstallAppModal })));
+const BrandAssetsModal = React.lazy(() => import('./components/BrandAssetsModal').then((m) => ({ default: m.BrandAssetsModal })));
+const ChangePasswordModal = React.lazy(() => import('./components/ChangePasswordModal').then((m) => ({ default: m.ChangePasswordModal })));
 
 import { auth, signOut, onAuthStateChanged, User as FirebaseUser } from './lib/firebase';
 
-// Views
-import { LoginView } from './views/LoginView';
-import { DashboardView } from './views/DashboardView';
-import { ProfileView } from './views/ProfileView';
-import { NutritionView } from './views/NutritionView';
-import { WorkoutView } from './views/WorkoutView';
-import { SupplementView } from './views/SupplementView';
-import { RecipesView } from './views/RecipesView';
-import { ProgressView } from './views/ProgressView';
-import { CoachView } from './views/CoachView';
+// Lazy Loaded Heavy Views
+const LoginView = React.lazy(() => import('./views/LoginView').then((m) => ({ default: m.LoginView })));
+const DashboardView = React.lazy(() => import('./views/DashboardView').then((m) => ({ default: m.DashboardView })));
+const ProfileView = React.lazy(() => import('./views/ProfileView').then((m) => ({ default: m.ProfileView })));
+const NutritionView = React.lazy(() => import('./views/NutritionView').then((m) => ({ default: m.NutritionView })));
+const WorkoutView = React.lazy(() => import('./views/WorkoutView').then((m) => ({ default: m.WorkoutView })));
+const SupplementView = React.lazy(() => import('./views/SupplementView').then((m) => ({ default: m.SupplementView })));
+const RecipesView = React.lazy(() => import('./views/RecipesView').then((m) => ({ default: m.RecipesView })));
+const ProgressView = React.lazy(() => import('./views/ProgressView').then((m) => ({ default: m.ProgressView })));
+const CoachView = React.lazy(() => import('./views/CoachView').then((m) => ({ default: m.CoachView })));
+
+const ViewSuspenseFallback: React.FC = () => (
+  <div
+    role="status"
+    aria-live="polite"
+    className="flex flex-col items-center justify-center min-h-[300px] w-full p-8 text-center"
+  >
+    <div className="w-10 h-10 rounded-full border-2 border-blue-500/20 border-t-blue-500 animate-spin mb-3" aria-hidden="true" />
+    <span className="text-sm font-medium text-slate-400">Carregando módulo...</span>
+  </div>
+);
 
 export default function App() {
   // Authentication & Session State (Starts unauthenticated as requested)
@@ -83,91 +106,17 @@ export default function App() {
     }
   });
 
-  // Navigation & Role State
-  const [activeModule, setActiveModule] = useState<ModuleType>('dashboard');
+  // Navigation, Routing & Focus State
+  const intendedModuleRef = useRef<ModuleType | null>(null);
+  const mainContentRef = useRef<HTMLElement | null>(null);
+  const [activeModule, setActiveModule] = useState<ModuleType>(() => {
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const parsed = getModuleFromHash(window.location.hash);
+      if (parsed) return parsed;
+    }
+    return 'dashboard';
+  });
   const [currentRole, setCurrentRole] = useState<UserRole>('athlete');
-
-  // Athletes Data State
-  const [athletesList, setAthletesList] = useState<AthleteProfile[]>(() => {
-    try {
-      const saved = localStorage.getItem('lm_team_athletes_v2');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return OTHER_ATHLETES;
-  });
-
-  const [currentAthlete, setCurrentAthlete] = useState<AthleteProfile>(() => {
-    try {
-      const saved = localStorage.getItem('lm_team_athletes_v2');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed[0];
-      }
-    } catch {}
-    return INITIAL_ATHLETE;
-  });
-
-  // Persist athletesList to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem('lm_team_athletes_v2', JSON.stringify(athletesList));
-    } catch {}
-  }, [athletesList]);
-
-  // Core App Modules State
-  const [nutritionPlan, setNutritionPlan] = useState<NutritionPlan>(() => {
-    try {
-      const saved = localStorage.getItem('lm_team_nutrition_plan_v2');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && Array.isArray(parsed.meals) && parsed.meals.length > 0) return parsed;
-      }
-    } catch {}
-    return INITIAL_NUTRITION_PLAN;
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('lm_team_nutrition_plan_v2', JSON.stringify(nutritionPlan));
-    } catch {}
-  }, [nutritionPlan]);
-
-  const [workoutSplits, setWorkoutSplits] = useState<WorkoutSplit[]>(() => {
-    try {
-      const saved = localStorage.getItem('lm_team_workout_splits_v2');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return WORKOUT_SPLITS;
-  });
-
-  const [workoutTemplates, setWorkoutTemplates] = useState<WorkoutTemplate[]>(() => {
-    try {
-      const saved = localStorage.getItem('lm_team_workout_templates_v1');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return INITIAL_WORKOUT_TEMPLATES;
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('lm_team_workout_splits_v2', JSON.stringify(workoutSplits));
-    } catch {}
-  }, [workoutSplits]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('lm_team_workout_templates_v1', JSON.stringify(workoutTemplates));
-    } catch {}
-  }, [workoutTemplates]);
 
   // Prescribers & Clinical Team State
   const [prescribersList, setPrescribersList] = useState<PrescriberProfile[]>(() => {
@@ -204,6 +153,40 @@ export default function App() {
     } catch {}
   }, [prescribersList]);
 
+  // Firebase User ID for Scoped Data Isolation
+  const [firebaseUid, setFirebaseUid] = useState<string | null>(null);
+
+  // Scoped Athlete Plans Hook (Isolates plans, cleans view on switch, cancels delayed responses)
+  const {
+    athletesList,
+    setAthletesList,
+    currentAthlete,
+    setCurrentAthlete,
+    nutritionPlan,
+    setNutritionPlan,
+    workoutSplits,
+    setWorkoutSplits,
+    workoutTemplates,
+    setWorkoutTemplates,
+    supplements,
+    setSupplements,
+    isLoadingPlans,
+    nutritionSyncState,
+    workoutSyncState,
+    supplementSyncState,
+    lastConfirmedNutrition,
+    lastConfirmedWorkout,
+    lastConfirmedSupplements,
+    nutritionError,
+    workoutError,
+    supplementError,
+    retryDomainSync
+  } = useAthletePlans({
+    firebaseUid,
+    userSessionType,
+    prescriberId: currentPrescriber?.id
+  });
+
   // Initial Sync from Firestore: Load all authoritative credentials on mount
   useEffect(() => {
     let isMounted = true;
@@ -238,24 +221,6 @@ export default function App() {
       isMounted = false;
     };
   }, []);
-
-  // Supplements State with LocalStorage & Cloud Sync
-  const [supplements, setSupplements] = useState<SupplementItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('lm_team_supplements_v3');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return SUPPLEMENT_PROTOCOLS;
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('lm_team_supplements_v3', JSON.stringify(supplements));
-    } catch {}
-  }, [supplements]);
 
   // Pre-defined Formula Templates Library
   const [formulaTemplates, setFormulaTemplates] = useState<SupplementFormulaTemplate[]>(() => {
@@ -343,11 +308,11 @@ export default function App() {
   const [isInitialLoading, setIsInitialLoading] = useState<boolean>(true);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
-  // Splash Screen initial timer
+  // Splash Screen initial timer - eliminates artificial delay
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsInitialLoading(false);
-    }, 1100);
+    }, 40);
     return () => clearTimeout(timer);
   }, []);
 
@@ -379,36 +344,10 @@ export default function App() {
   // Offline-First Cloud Sync State via syncService
   const [syncStatus, setSyncStatus] = useState<CloudSyncStatus>(syncService.getStatus());
 
-  // Day (Light) / Night (Dark) Theme state with persistence
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    try {
-      const saved = localStorage.getItem('lm_team_theme_v1');
-      if (saved === 'light' || saved === 'dark') return saved;
-    } catch {}
-    return 'dark';
-  });
+  // Theme Mode Hook with systematic design tokens & accessibility
+  const { theme, toggleTheme: handleToggleTheme } = useThemeMode();
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('lm_team_theme_v1', theme);
-      if (theme === 'light') {
-        document.documentElement.classList.add('light-theme');
-        document.documentElement.classList.remove('dark');
-        document.body.classList.add('light-theme');
-      } else {
-        document.documentElement.classList.remove('light-theme');
-        document.documentElement.classList.add('dark');
-        document.body.classList.remove('light-theme');
-      }
-    } catch {}
-  }, [theme]);
-
-  const handleToggleTheme = () => {
-    soundFx.playClick();
-    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
-  };
-
-  // Web Layout & Keyboard Navigation State
+  // Web Layout & Navigation Modals State
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem('lm_team_sidebar_collapsed') === 'true';
@@ -431,80 +370,25 @@ export default function App() {
     });
   };
 
-  // Global Keyboard Shortcuts (Web & Tablet)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger if user is actively typing in an input, textarea or contenteditable
-      const target = e.target as HTMLElement | null;
-      const isInput =
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.tagName === 'SELECT' ||
-          target.isContentEditable);
-
-      // ⌘K or Ctrl+K for Command Palette (works even if inside an input)
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        soundFx.playClick();
-        setIsCommandPaletteOpen((prev) => !prev);
-        return;
-      }
-
-      if (isInput) return;
-
-      if (e.key === '1') {
-        e.preventDefault();
-        soundFx.playClick();
-        setActiveModule('dashboard');
-      } else if (e.key === '2') {
-        e.preventDefault();
-        soundFx.playClick();
-        setActiveModule('profile');
-      } else if (e.key === '3') {
-        e.preventDefault();
-        soundFx.playClick();
-        setActiveModule('nutrition');
-      } else if (e.key === '4') {
-        e.preventDefault();
-        soundFx.playClick();
-        setActiveModule('workout');
-      } else if (e.key === '5') {
-        e.preventDefault();
-        soundFx.playClick();
-        setActiveModule('supplements');
-      } else if (e.key === '6') {
-        e.preventDefault();
-        soundFx.playClick();
-        setActiveModule('recipes');
-      } else if (e.key === '7') {
-        e.preventDefault();
-        soundFx.playClick();
-        setActiveModule('progress');
-      } else if (e.key === '8' && userSessionType === 'prescriber' && currentRole === 'coach') {
-        e.preventDefault();
-        soundFx.playClick();
-        setActiveModule('coach_admin');
-      } else if (e.key.toLowerCase() === 't') {
-        e.preventDefault();
-        handleToggleTheme();
-      } else if (e.key.toLowerCase() === 'p') {
-        e.preventDefault();
-        soundFx.playClick();
-        setIsPdfReportOpen(true);
-      } else if (e.key === '?') {
-        e.preventDefault();
-        soundFx.playClick();
-        setIsKeyboardShortcutsOpen(true);
-      } else if (e.key === 'Escape') {
-        setIsCommandPaletteOpen(false);
-        setIsKeyboardShortcutsOpen(false);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentRole, userSessionType]);
+  // Centralized Global Keyboard Shortcuts Hook
+  useGlobalShortcuts({
+    currentRole,
+    userSessionType,
+    onToggleCommandPalette: () => setIsCommandPaletteOpen((prev) => !prev),
+    onOpenKeyboardShortcuts: () => setIsKeyboardShortcutsOpen(true),
+    onOpenPdfReport: () => setIsPdfReportOpen(true),
+    onToggleTheme: handleToggleTheme,
+    onSelectModule: setActiveModule,
+    onCloseModals: () => {
+      setIsCommandPaletteOpen(false);
+      setIsKeyboardShortcutsOpen(false);
+      setIsPdfReportOpen(false);
+      setIsRoomSchemaModalOpen(false);
+      setIsInstallAppModalOpen(false);
+      setIsBrandAssetsModalOpen(false);
+      setIsChangePasswordModalOpen(false);
+    }
+  });
 
   // Push / Toast Notification Simulation
   const [activeToast, setActiveToast] = useState<{
@@ -521,11 +405,73 @@ export default function App() {
     }, 6000);
   };
 
+  // Navigation handler with URL hash sync, document.title, and accessible focus management
+  const handleSelectModule = (mod: ModuleType) => {
+    if (mod === 'coach_admin' && userSessionType !== 'prescriber') {
+      showToast('Acesso Restrito', 'O Painel do Treinador é exclusivo para a equipe clínica LM Team.');
+      return;
+    }
+    setActiveModule(mod);
+    const targetHash = getHashForModule(mod);
+    if (typeof window !== 'undefined' && window.location.hash !== targetHash) {
+      window.history.pushState(null, '', targetHash);
+    }
+    if (typeof document !== 'undefined') {
+      document.title = getDocumentTitle(mod);
+    }
+    mainContentRef.current?.focus({ preventScroll: true });
+  };
+
+  // Synchronize active module with URL hash and browser back/forward history
+  useEffect(() => {
+    const handleHashSync = () => {
+      if (typeof window === 'undefined') return;
+      const hash = window.location.hash;
+      const mod = getModuleFromHash(hash);
+      if (!mod) return;
+
+      if (!isAuthenticated) {
+        intendedModuleRef.current = mod;
+        return;
+      }
+
+      if (mod === 'coach_admin' && userSessionType !== 'prescriber') {
+        setActiveModule('dashboard');
+        window.history.replaceState(null, '', '#dashboard');
+        document.title = getDocumentTitle('dashboard');
+        return;
+      }
+
+      setActiveModule(mod);
+      document.title = getDocumentTitle(mod);
+      mainContentRef.current?.focus({ preventScroll: true });
+    };
+
+    handleHashSync();
+    window.addEventListener('hashchange', handleHashSync);
+    window.addEventListener('popstate', handleHashSync);
+    return () => {
+      window.removeEventListener('hashchange', handleHashSync);
+      window.removeEventListener('popstate', handleHashSync);
+    };
+  }, [isAuthenticated, userSessionType]);
+
+  // Audio & Rest Timer Visual Equivalent Listener (toast triggered even if audio muted)
+  useEffect(() => {
+    const unsubscribe = soundFx.subscribe((event) => {
+      if (event === 'rest_complete') {
+        showToast('Tempo de Descanso Concluído! ⏱️', 'Sua recuperação terminou. Pronto para a próxima série!');
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
   // Firebase Auth State Listener & Authoritative Profile Synchronization
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
       if (firebaseUser) {
         setIsAuthenticated(true);
+        setFirebaseUid(firebaseUser.uid);
 
         // Fetch authoritative profile and verified role from backend
         try {
@@ -610,9 +556,14 @@ export default function App() {
     syncService.setOnline(!syncStatus.isOnline);
   };
 
-  // Record mutation in local room and sync queue
-  const recordMutation = (domain: PendingSyncItem['domain'], entityId: string, payload: any) => {
-    syncService.enqueueMutation(domain, entityId, payload, currentAthlete.id);
+  // Record mutation in local room and sync queue with explicit operation
+  const recordMutation = (
+    domain: PendingSyncItem['domain'],
+    entityId: string,
+    payload: any,
+    operation: 'INSERT' | 'UPDATE' | 'DELETE' = 'UPDATE'
+  ) => {
+    syncService.enqueueMutation(domain, entityId, payload, currentAthlete.id, operation);
   };
 
   // Handlers
@@ -625,43 +576,53 @@ export default function App() {
   };
 
   const handleAddAthlete = (newAthlete: AthleteProfile) => {
-    setAthletesList((prev) => [newAthlete, ...prev]);
-    setCurrentAthlete(newAthlete);
-    recordMutation('athlete', newAthlete.id, newAthlete);
+    const rawPassword = (newAthlete as any).password || (newAthlete as any).accessPassword;
+    const cleanAthlete = { ...newAthlete };
+    delete (cleanAthlete as any).password;
+    delete (cleanAthlete as any).accessPassword;
 
-    if (newAthlete.password) {
-      adminService.setAthletePassword(newAthlete.id, newAthlete.password).catch((err) => {
+    setAthletesList((prev) => [cleanAthlete, ...prev]);
+    setCurrentAthlete(cleanAthlete);
+    recordMutation('athlete', cleanAthlete.id, cleanAthlete, 'INSERT');
+
+    if (rawPassword) {
+      adminService.setAthletePassword(cleanAthlete.id, String(rawPassword)).catch((err) => {
         console.warn('Notice syncing athlete password:', err);
       });
     }
 
     showToast(
       'Aluno Cadastrado com Sucesso!',
-      `${newAthlete.name} foi adicionado ao time com CPF ${newAthlete.cpf || 'registrado'} e telefone ${newAthlete.phone}.`
+      `${cleanAthlete.name} foi adicionado ao time com CPF ${cleanAthlete.cpf || 'registrado'} e telefone ${cleanAthlete.phone}.`
     );
   };
 
   const handleUpdateAthlete = (updatedAthlete: AthleteProfile) => {
-    setAthletesList((prev) => prev.map((a) => (a.id === updatedAthlete.id ? updatedAthlete : a)));
-    if (currentAthlete.id === updatedAthlete.id) {
-      setCurrentAthlete(updatedAthlete);
-    }
-    recordMutation('athlete', updatedAthlete.id, updatedAthlete);
+    const rawPassword = (updatedAthlete as any).password || (updatedAthlete as any).accessPassword;
+    const cleanAthlete = { ...updatedAthlete };
+    delete (cleanAthlete as any).password;
+    delete (cleanAthlete as any).accessPassword;
 
-    if (updatedAthlete.password) {
-      adminService.setAthletePassword(updatedAthlete.id, updatedAthlete.password).catch((err) => {
+    setAthletesList((prev) => prev.map((a) => (a.id === cleanAthlete.id ? cleanAthlete : a)));
+    if (currentAthlete.id === cleanAthlete.id) {
+      setCurrentAthlete(cleanAthlete);
+    }
+    recordMutation('athlete', cleanAthlete.id, cleanAthlete, 'UPDATE');
+
+    if (rawPassword) {
+      adminService.setAthletePassword(cleanAthlete.id, String(rawPassword)).catch((err) => {
         console.warn('Notice syncing updated athlete password:', err);
       });
     }
 
-    showToast('Cadastro Atualizado!', `Dados cadastrais de ${updatedAthlete.name} foram atualizados.`);
+    showToast('Cadastro Atualizado!', `Dados cadastrais de ${cleanAthlete.name} foram atualizados.`);
   };
 
   const handleUpdateAthleteAvatar = (newAvatarUrl: string) => {
     const updated = { ...currentAthlete, avatar: newAvatarUrl };
     setCurrentAthlete(updated);
     setAthletesList((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
-    recordMutation('athlete', updated.id, { avatar: newAvatarUrl });
+    recordMutation('athlete', updated.id, { avatar: newAvatarUrl }, 'UPDATE');
     showToast('Foto de Perfil Atualizada!', `A nova foto de ${updated.name} foi salva.`);
   };
 
@@ -679,7 +640,7 @@ export default function App() {
     try {
       await adminService.toggleStatus('athlete', athleteId, nextStatus);
     } catch (e) {
-      recordMutation('athlete', athleteId, { status: nextStatus });
+      recordMutation('athlete', athleteId, { status: nextStatus }, 'UPDATE');
     }
 
     showToast(
@@ -704,7 +665,7 @@ export default function App() {
     try {
       await adminService.deleteRecord('athlete', athleteId);
     } catch (e) {
-      recordMutation('athlete', athleteId, { operation: 'DELETE' });
+      recordMutation('athlete', athleteId, { id: athleteId, operation: 'DELETE' }, 'DELETE');
     }
 
     showToast('Aluno Excluído', `${targetName} foi removido do time.`);
@@ -732,10 +693,10 @@ export default function App() {
       const res = await adminService.createPrescriber(newPrescriber);
       if (!res.success && res.error) {
         console.warn('Backend prescriber creation fallback:', res.error);
-        recordMutation('prescriber_profile', newPrescriber.id, newPrescriber);
+        recordMutation('prescriber_profile', newPrescriber.id, newPrescriber, 'INSERT');
       }
     } catch (err) {
-      recordMutation('prescriber_profile', newPrescriber.id, newPrescriber);
+      recordMutation('prescriber_profile', newPrescriber.id, newPrescriber, 'INSERT');
     }
 
     showToast(
@@ -771,7 +732,7 @@ export default function App() {
         await adminService.createPrescriber(updated);
       }
     } catch (e) {
-      recordMutation('prescriber_profile', updated.id, updated);
+      recordMutation('prescriber_profile', updated.id, updated, 'UPDATE');
     }
 
     showToast('Perfil Atualizado!', `Dados de ${updated.name} foram atualizados.`);
@@ -803,7 +764,7 @@ export default function App() {
     try {
       await adminService.deleteRecord('prescriber', prescriberId);
     } catch (e) {
-      recordMutation('prescriber_profile', prescriberId, { operation: 'DELETE' });
+      recordMutation('prescriber_profile', prescriberId, { id: prescriberId, operation: 'DELETE' }, 'DELETE');
     }
 
     showToast('Prescritor Removido', `${target.name} foi removido da equipe técnica.`);
@@ -829,7 +790,7 @@ export default function App() {
     try {
       await adminService.toggleStatus('prescriber', prescriberId, nextStatus);
     } catch (e) {
-      recordMutation('prescriber_profile', prescriberId, { status: nextStatus });
+      recordMutation('prescriber_profile', prescriberId, { status: nextStatus }, 'UPDATE');
     }
 
     showToast('Status Atualizado', `${target.name} agora está ${nextStatus}.`);
@@ -845,7 +806,7 @@ export default function App() {
 
     setCurrentAthlete(updatedAth);
     setAthletesList((prev) => prev.map((a) => (a.id === updatedAth.id ? updatedAth : a)));
-    recordMutation('checkin_anthropometric', currentAthlete.id, newAssessment);
+    recordMutation('checkin_anthropometric', currentAthlete.id, newAssessment, 'INSERT');
     showToast('Reavaliação Salva!', 'Nova ficha antropométrica registrada no Room local e enfileirada para o Firebase Firestore.');
   };
 
@@ -853,7 +814,7 @@ export default function App() {
     setNutritionPlan((prev) => {
       const targetMeal = prev.meals.find((m) => m.id === mealId);
       const isNextCompleted = !targetMeal?.isCompleted;
-      recordMutation('checkin_meal', mealId, { mealId, isCompleted: isNextCompleted });
+      recordMutation('checkin_meal', mealId, { mealId, isCompleted: isNextCompleted }, 'UPDATE');
       return {
         ...prev,
         meals: prev.meals.map((m) => (m.id === mealId ? { ...m, isCompleted: !m.isCompleted } : m))
@@ -863,7 +824,7 @@ export default function App() {
 
   const handleUpdateNutritionPlan = (updatedPlan: NutritionPlan) => {
     setNutritionPlan(updatedPlan);
-    recordMutation('prescription_nutrition', 'main-plan', updatedPlan);
+    recordMutation('prescription_nutrition', 'main-plan', updatedPlan, 'UPDATE');
     showToast(
       'Plano Alimentar Salvo!',
       `Dieta atualizada com ${updatedPlan.dailyTargetCalories} kcal e ${updatedPlan.meals.length} refeições calculadas.`
@@ -882,7 +843,7 @@ export default function App() {
         splitId: activeSplit.id,
         completedSetsCount: completedSets.length,
         setsSummary: completedSets
-      });
+      }, 'UPDATE');
     }
   };
 
@@ -894,13 +855,13 @@ export default function App() {
       }
       return [newTemplate, ...prev];
     });
-    recordMutation('workout_template', newTemplate.id, newTemplate);
+    recordMutation('workout_template', newTemplate.id, newTemplate, 'UPDATE');
     showToast('Modelo de Treino Salvo!', `"${newTemplate.name}" adicionado à biblioteca de modelos reutilizáveis.`);
   };
 
   const handleDeleteWorkoutTemplate = (templateId: string) => {
     setWorkoutTemplates((prev) => prev.filter((t) => t.id !== templateId));
-    recordMutation('workout_template', templateId, { operation: 'DELETE' });
+    recordMutation('workout_template', templateId, { id: templateId, operation: 'DELETE' }, 'DELETE');
     showToast('Modelo Excluído', 'O modelo de treino foi removido da sua biblioteca.');
   };
 
@@ -924,7 +885,7 @@ export default function App() {
       console.error('Error saving exercise to Firestore:', err);
     }
 
-    recordMutation('exercise_library', exercise.id, exercise);
+    recordMutation('exercise_library', exercise.id, exercise, 'UPDATE');
     showToast(
       'Banco de Exercícios Atualizado!',
       `"${exercise.name}" foi salvo e sincronizado na biblioteca da assessoria.`
@@ -938,7 +899,7 @@ export default function App() {
     } catch (err) {
       console.error('Error deleting exercise from Firestore:', err);
     }
-    recordMutation('exercise_library', exerciseId, { operation: 'DELETE' });
+    recordMutation('exercise_library', exerciseId, { id: exerciseId, operation: 'DELETE' }, 'DELETE');
     showToast('Exercício Removido', 'Exercício excluído da biblioteca da assessoria.');
   };
 
@@ -978,7 +939,7 @@ export default function App() {
     setSupplements((prev) => {
       const target = prev.find((s) => s.id === supplementId);
       const isNextTaken = !target?.isTakenToday;
-      recordMutation('checkin_supplement', supplementId, { supplementId, isTaken: isNextTaken });
+      recordMutation('checkin_supplement', supplementId, { supplementId, isTaken: isNextTaken }, 'UPDATE');
       return prev.map((s) => (s.id === supplementId ? { ...s, isTakenToday: !s.isTakenToday } : s));
     });
   };
@@ -986,7 +947,7 @@ export default function App() {
   // Supplement & Formula CRUD Handlers for Admins & Prescribers
   const handleAddSupplement = (newSup: SupplementItem, saveAsTemplateFlag?: boolean) => {
     setSupplements((prev) => [newSup, ...prev]);
-    recordMutation('prescription_supplement', newSup.id, newSup);
+    recordMutation('prescription_supplement', newSup.id, newSup, 'INSERT');
     showToast(
       'Fórmula Prescrita com Sucesso!',
       `"${newSup.name}" foi adicionada aos protocolos clínicos de ${currentAthlete.name}.`
@@ -1009,7 +970,7 @@ export default function App() {
         createdAt: new Date().toISOString().split('T')[0]
       };
       setFormulaTemplates((prev) => [newTemplate, ...prev]);
-      recordMutation('formula_template', newTemplate.id, newTemplate);
+      recordMutation('formula_template', newTemplate.id, newTemplate, 'INSERT');
     }
   };
 
@@ -1017,7 +978,7 @@ export default function App() {
     setSupplements((prev) =>
       prev.map((s) => (s.id === updatedSup.id ? updatedSup : s))
     );
-    recordMutation('prescription_supplement', updatedSup.id, updatedSup);
+    recordMutation('prescription_supplement', updatedSup.id, updatedSup, 'UPDATE');
     showToast(
       'Fórmula Atualizada!',
       `Os componentes e posologia de "${updatedSup.name}" foram salvos.`
@@ -1040,14 +1001,14 @@ export default function App() {
         createdAt: new Date().toISOString().split('T')[0]
       };
       setFormulaTemplates((prev) => [newTemplate, ...prev]);
-      recordMutation('formula_template', newTemplate.id, newTemplate);
+      recordMutation('formula_template', newTemplate.id, newTemplate, 'UPDATE');
     }
   };
 
   const handleDeleteSupplement = (supplementId: string) => {
     const target = supplements.find((s) => s.id === supplementId);
     setSupplements((prev) => prev.filter((s) => s.id !== supplementId));
-    recordMutation('prescription_supplement', supplementId, { operation: 'DELETE', id: supplementId });
+    recordMutation('prescription_supplement', supplementId, { id: supplementId, operation: 'DELETE' }, 'DELETE');
     showToast(
       'Fórmula Excluída',
       `"${target?.name || 'Protocolo'}" foi removido da prescrição do atleta.`
@@ -1062,7 +1023,7 @@ export default function App() {
       }
       return [template, ...prev];
     });
-    recordMutation('formula_template', template.id, template);
+    recordMutation('formula_template', template.id, template, 'UPDATE');
     showToast(
       'Modelo de Fórmula Salvo!',
       `"${template.name}" foi salvo na biblioteca para reutilização em outras prescrições.`
@@ -1071,7 +1032,7 @@ export default function App() {
 
   const handleDeleteFormulaTemplate = (templateId: string) => {
     setFormulaTemplates((prev) => prev.filter((t) => t.id !== templateId));
-    recordMutation('formula_template', templateId, { operation: 'DELETE', id: templateId });
+    recordMutation('formula_template', templateId, { id: templateId, operation: 'DELETE' }, 'DELETE');
     showToast('Modelo Excluído', 'A fórmula foi removida da biblioteca de modelos.');
   };
 
@@ -1092,7 +1053,7 @@ export default function App() {
     };
 
     setSupplements((prev) => [newSupplement, ...prev]);
-    recordMutation('prescription_supplement', newSupplement.id, newSupplement);
+    recordMutation('prescription_supplement', newSupplement.id, newSupplement, 'INSERT');
     showToast(
       'Fórmula Aplicada!',
       `"${newSupplement.name}" foi prescrita para ${currentAthlete.name}.`
@@ -1131,7 +1092,11 @@ export default function App() {
     setCurrentAthlete(athlete);
     setCurrentRole('athlete');
     setIsAuthenticated(true);
-    setActiveModule('dashboard');
+    const targetModule = intendedModuleRef.current && intendedModuleRef.current !== 'coach_admin'
+      ? intendedModuleRef.current
+      : 'dashboard';
+    intendedModuleRef.current = null;
+    handleSelectModule(targetModule);
     showToast(
       'Bem-vindo, ' + athlete.name.split(' ')[0] + '!',
       firebaseUid ? 'Autenticado com segurança.' : 'Seu protocolo clínico e treinos estão sincronizados.'
@@ -1145,7 +1110,9 @@ export default function App() {
     } catch {}
     setCurrentRole('coach');
     setIsAuthenticated(true);
-    setActiveModule('coach_admin');
+    const targetModule = intendedModuleRef.current || 'coach_admin';
+    intendedModuleRef.current = null;
+    handleSelectModule(targetModule);
     showToast('Painel do Prescritor', 'Acesso administrativo do Head Coach liberado.');
   };
 
@@ -1157,7 +1124,9 @@ export default function App() {
     setCurrentPrescriber(prescriber);
     setCurrentRole('coach');
     setIsAuthenticated(true);
-    setActiveModule('coach_admin');
+    const targetModule = intendedModuleRef.current || 'coach_admin';
+    intendedModuleRef.current = null;
+    handleSelectModule(targetModule);
     showToast(
       `Bem-vindo, ${prescriber.name}!`,
       prescriber.isAdmin
@@ -1209,25 +1178,27 @@ export default function App() {
   if (!isAuthenticated) {
     return (
       <div className={`min-h-screen ${theme === 'light' ? 'bg-[#f1f5f9] text-slate-900' : 'bg-[#070a13] text-slate-100'} selection:bg-cyan-500 selection:text-white flex flex-col justify-center transition-colors duration-300`}>
-        <LoginView
-          athletesList={athletesList}
-          prescribersList={prescribersList}
-          onLoginSuccess={handleLoginSuccess}
-          onPrescriberLoginSuccess={handlePrescriberLoginSuccess}
-          onUpdatePrescriberPassword={handleUpdatePrescriberPassword}
-          onEnterAsCoach={handleEnterAsCoach}
-          onOpenInstallApp={() => setIsInstallAppModalOpen(true)}
-          theme={theme}
-          onToggleTheme={handleToggleTheme}
-        />
+        <React.Suspense fallback={<ViewSuspenseFallback />}>
+          <LoginView
+            athletesList={athletesList}
+            prescribersList={prescribersList}
+            onLoginSuccess={handleLoginSuccess}
+            onPrescriberLoginSuccess={handlePrescriberLoginSuccess}
+            onUpdatePrescriberPassword={handleUpdatePrescriberPassword}
+            onEnterAsCoach={handleEnterAsCoach}
+            onOpenInstallApp={() => setIsInstallAppModalOpen(true)}
+            theme={theme}
+            onToggleTheme={handleToggleTheme}
+          />
 
-        {/* PWA Install Modal for Unauthenticated View */}
-        <InstallAppModal
-          isOpen={isInstallAppModalOpen}
-          onClose={() => setIsInstallAppModalOpen(false)}
-          deferredPrompt={deferredPrompt}
-          onInstallClick={handleInstallAppClick}
-        />
+          {/* PWA Install Modal for Unauthenticated View */}
+          <InstallAppModal
+            isOpen={isInstallAppModalOpen}
+            onClose={() => setIsInstallAppModalOpen(false)}
+            deferredPrompt={deferredPrompt}
+            onInstallClick={handleInstallAppClick}
+          />
+        </React.Suspense>
 
         {/* Global Toast Notification */}
         <AnimatePresence>
@@ -1260,10 +1231,15 @@ export default function App() {
 
   return (
     <div className={`min-h-screen ${theme === 'light' ? 'bg-[#f8fafc] text-slate-900' : 'bg-[#070a13] text-slate-100'} selection:bg-blue-600 selection:text-white flex flex-row transition-colors duration-300`}>
+      {/* Accessibility Skip Link */}
+      <a href="#main-content" className="skip-link">
+        Pular para o conteúdo principal
+      </a>
+
       {/* Desktop & Tablet Web Sidebar Navigation (Collapsible, One UI 9.0 inspired) */}
       <WebSidebar
         activeModule={activeModule}
-        onSelectModule={setActiveModule}
+        onSelectModule={handleSelectModule}
         currentRole={currentRole}
         currentAthlete={currentAthlete}
         isCollapsed={isSidebarCollapsed}
@@ -1311,8 +1287,27 @@ export default function App() {
           onToggleTheme={handleToggleTheme}
         />
 
-        {/* Main View Router Container */}
-        <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-6 pb-28 lg:pb-12">
+        {/* Main View Router Container with Safe Bottom Clearance for Mobile Dock and Focus Management */}
+        <main
+          ref={mainContentRef}
+          id="main-content"
+          tabIndex={-1}
+          className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-6 pb-32 sm:pb-28 lg:pb-12 focus:outline-none"
+        >
+        {isLoadingPlans && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="mb-4 flex items-center justify-between gap-3 px-4 py-2.5 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-medium animate-pulse"
+          >
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full border-2 border-blue-400 border-t-transparent animate-spin" />
+              <span>Sincronizando planos e protocolos de {currentAthlete.name}...</span>
+            </div>
+            <span className="text-[10px] text-blue-400/70 hidden sm:inline">Room DB • Firestore Scoped</span>
+          </div>
+        )}
+        <React.Suspense fallback={<ViewSuspenseFallback />}>
         <AnimatePresence mode="wait">
           {activeModule === 'dashboard' && (
             <motion.div
@@ -1327,8 +1322,8 @@ export default function App() {
                 nutritionPlan={nutritionPlan}
                 workoutSplits={workoutSplits}
                 supplements={supplements}
-                onNavigate={setActiveModule}
-                onStartTodayWorkout={() => setActiveModule('workout')}
+                onNavigate={handleSelectModule}
+                onStartTodayWorkout={() => handleSelectModule('workout')}
               />
             </motion.div>
           )}
@@ -1361,6 +1356,7 @@ export default function App() {
               transition={{ duration: 0.18 }}
             >
               <NutritionView
+                athlete={currentAthlete}
                 nutritionPlan={nutritionPlan}
                 onToggleMealCompleted={handleToggleMealCompleted}
                 onOpenSubstitution={(food) =>
@@ -1368,6 +1364,11 @@ export default function App() {
                 }
                 onUpdateNutritionPlan={handleUpdateNutritionPlan}
                 athleteWeightKg={currentAthlete.currentWeightKg}
+                syncState={nutritionSyncState}
+                lastConfirmedTime={lastConfirmedNutrition}
+                errorMessage={nutritionError}
+                onRetry={() => retryDomainSync('nutrition')}
+                isLoading={isLoadingPlans}
               />
             </motion.div>
           )}
@@ -1381,6 +1382,7 @@ export default function App() {
               transition={{ duration: 0.18 }}
             >
               <WorkoutView
+                athlete={currentAthlete}
                 workoutSplits={workoutSplits}
                 onOpenRestTimer={handleOpenRestTimer}
                 onUpdateSplits={handleUpdateWorkoutSplits}
@@ -1391,6 +1393,11 @@ export default function App() {
                 onSaveExerciseToLibrary={handleSaveExerciseToLibrary}
                 onDeleteExerciseFromLibrary={handleDeleteExerciseFromLibrary}
                 onToast={showToast}
+                syncState={workoutSyncState}
+                lastConfirmedTime={lastConfirmedWorkout}
+                errorMessage={workoutError}
+                onRetry={() => retryDomainSync('workout')}
+                isLoading={isLoadingPlans}
               />
             </motion.div>
           )}
@@ -1404,6 +1411,7 @@ export default function App() {
               transition={{ duration: 0.18 }}
             >
               <SupplementView
+                athlete={currentAthlete}
                 supplements={supplements}
                 onToggleSupplementTaken={handleToggleSupplementTaken}
                 onSimulateAlarm={showToast}
@@ -1417,6 +1425,11 @@ export default function App() {
                 onDeleteFormulaTemplate={handleDeleteFormulaTemplate}
                 athleteName={currentAthlete.name}
                 prescriberName={currentPrescriber.name}
+                syncState={supplementSyncState}
+                lastConfirmedTime={lastConfirmedSupplements}
+                errorMessage={supplementError}
+                onRetry={() => retryDomainSync('supplements')}
+                isLoading={isLoadingPlans}
               />
             </motion.div>
           )}
@@ -1470,8 +1483,8 @@ export default function App() {
                 onUpdateNutritionPlan={handleUpdateNutritionPlan}
                 supplements={supplements}
                 templates={workoutTemplates}
-                onNavigateToWorkout={() => setActiveModule('workout')}
-                onNavigateToSupplements={() => setActiveModule('supplements')}
+                onNavigateToWorkout={() => handleSelectModule('workout')}
+                onNavigateToSupplements={() => handleSelectModule('supplements')}
                 prescribersList={prescribersList}
                 currentPrescriber={currentPrescriber}
                 onSelectPrescriber={handleSelectPrescriber}
@@ -1484,13 +1497,14 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
+        </React.Suspense>
       </main>
       </div>
 
       {/* Floating Liquid Glass Navigation Dock (Mobile & Compact Tablets) */}
       <LiquidNavbar
         activeModule={activeModule}
-        onSelectModule={setActiveModule}
+        onSelectModule={handleSelectModule}
         currentRole={currentRole}
         canAccessAdmin={userSessionType === 'prescriber'}
         theme={theme}
@@ -1500,7 +1514,7 @@ export default function App() {
       <CommandPaletteModal
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}
-        onSelectModule={setActiveModule}
+        onSelectModule={handleSelectModule}
         athletesList={athletesList}
         onSelectAthlete={handleSelectAthlete}
         currentRole={currentRole}
@@ -1534,78 +1548,81 @@ export default function App() {
         onApplySubstitution={handleApplyFoodSubstitution}
       />
 
-      {/* Official Physical Assessment PDF Report Modal */}
-      <PdfReportModal
-        isOpen={isPdfReportOpen}
-        onClose={() => setIsPdfReportOpen(false)}
-        athlete={currentAthlete}
-      />
+      {/* Lazy-loaded Heavy Modals in Suspense */}
+      <React.Suspense fallback={null}>
+        {/* Official Physical Assessment PDF Report Modal */}
+        <PdfReportModal
+          isOpen={isPdfReportOpen}
+          onClose={() => setIsPdfReportOpen(false)}
+          athlete={currentAthlete}
+        />
 
-      {/* Room Database Architecture & Kotlin Entities Modal */}
-      <RoomSchemaModal
-        isOpen={isRoomSchemaModalOpen}
-        onClose={() => setIsRoomSchemaModalOpen(false)}
-        syncStatus={syncStatus}
-        onTriggerSync={handleTriggerSync}
-        onToggleOnlineMode={handleToggleOnlineMode}
-      />
+        {/* Room Database Architecture & Kotlin Entities Modal */}
+        <RoomSchemaModal
+          isOpen={isRoomSchemaModalOpen}
+          onClose={() => setIsRoomSchemaModalOpen(false)}
+          syncStatus={syncStatus}
+          onTriggerSync={handleTriggerSync}
+          onToggleOnlineMode={handleToggleOnlineMode}
+        />
 
-      {/* PWA Install on Phone Modal */}
-      <InstallAppModal
-        isOpen={isInstallAppModalOpen}
-        onClose={() => setIsInstallAppModalOpen(false)}
-        deferredPrompt={deferredPrompt}
-        onInstallClick={handleInstallAppClick}
-      />
+        {/* PWA Install on Phone Modal */}
+        <InstallAppModal
+          isOpen={isInstallAppModalOpen}
+          onClose={() => setIsInstallAppModalOpen(false)}
+          deferredPrompt={deferredPrompt}
+          onInstallClick={handleInstallAppClick}
+        />
 
-      {/* Official Design System & Brand Assets Modal */}
-      <BrandAssetsModal
-        isOpen={isBrandAssetsModalOpen}
-        onClose={() => setIsBrandAssetsModalOpen(false)}
-        theme={theme}
-      />
+        {/* Official Design System & Brand Assets Modal */}
+        <BrandAssetsModal
+          isOpen={isBrandAssetsModalOpen}
+          onClose={() => setIsBrandAssetsModalOpen(false)}
+          theme={theme}
+        />
 
-      {/* Self-Service Change Password Modal for Current User */}
-      <ChangePasswordModal
-        isOpen={isChangePasswordModalOpen}
-        onClose={() => setIsChangePasswordModalOpen(false)}
-        currentUser={userSessionType === 'prescriber' ? currentPrescriber : currentAthlete}
-        userType={userSessionType === 'prescriber' ? (currentPrescriber.isAdmin ? 'admin' : 'prescriber') : 'athlete'}
-        onSuccess={(newPassword) => {
-          showToast(
-            'Senha Atualizada',
-            'Sua nova senha de acesso foi salva e atualizada com sucesso!'
-          );
-          if (userSessionType === 'prescriber') {
-            setCurrentPrescriber((prev) => ({
-              ...prev,
-              password: newPassword,
-              requiresPasswordChange: false
-            }));
-            setPrescribersList((prevList) =>
-              prevList.map((p) =>
-                p.id === currentPrescriber.id
-                  ? { ...p, password: newPassword, requiresPasswordChange: false }
-                  : p
-              )
+        {/* Self-Service Change Password Modal for Current User */}
+        <ChangePasswordModal
+          isOpen={isChangePasswordModalOpen}
+          onClose={() => setIsChangePasswordModalOpen(false)}
+          currentUser={userSessionType === 'prescriber' ? currentPrescriber : currentAthlete}
+          userType={userSessionType === 'prescriber' ? (currentPrescriber.isAdmin ? 'admin' : 'prescriber') : 'athlete'}
+          onSuccess={(newPassword) => {
+            showToast(
+              'Senha Atualizada',
+              'Sua nova senha de acesso foi salva e atualizada com sucesso!'
             );
-          } else {
-            setCurrentAthlete((prev) => ({
-              ...prev,
-              password: newPassword,
-              accessPassword: newPassword,
-              requiresPasswordChange: false
-            }));
-            setAthletesList((prevList) =>
-              prevList.map((a) =>
-                a.id === currentAthlete.id
-                  ? { ...a, password: newPassword, accessPassword: newPassword, requiresPasswordChange: false }
-                  : a
-              )
-            );
-          }
-        }}
-      />
+            if (userSessionType === 'prescriber') {
+              setCurrentPrescriber((prev) => ({
+                ...prev,
+                password: newPassword,
+                requiresPasswordChange: false
+              }));
+              setPrescribersList((prevList) =>
+                prevList.map((p) =>
+                  p.id === currentPrescriber.id
+                    ? { ...p, password: newPassword, requiresPasswordChange: false }
+                    : p
+                )
+              );
+            } else {
+              setCurrentAthlete((prev) => ({
+                ...prev,
+                password: newPassword,
+                accessPassword: newPassword,
+                requiresPasswordChange: false
+              }));
+              setAthletesList((prevList) =>
+                prevList.map((a) =>
+                  a.id === currentAthlete.id
+                    ? { ...a, password: newPassword, accessPassword: newPassword, requiresPasswordChange: false }
+                    : a
+                )
+              );
+            }
+          }}
+        />
+      </React.Suspense>
 
       {/* Startup & Transitions Splash Screen (One UI 9.0) */}
       <SplashScreen

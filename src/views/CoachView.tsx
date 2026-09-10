@@ -152,8 +152,18 @@ export const CoachView: React.FC<CoachViewProps> = ({
   const isCurrentUserAdmin = Boolean(currentPrescriber.isAdmin);
   const isCurrentUserMaster = Boolean(currentPrescriber.isMaster || currentPrescriber.isAdmin);
 
-  // Filter athletes
+  // Filter athletes (Admin vê todos; Profissional vê estritamente seus alunos vinculados)
   const filteredAthletes = athletesList.filter((ath) => {
+    if (!isCurrentUserAdmin) {
+      const isLinked =
+        ath.coachId === currentPrescriber.id ||
+        ath.nutritionistId === currentPrescriber.id ||
+        ath.doctorId === currentPrescriber.id ||
+        (Array.isArray(ath.assignedPrescriberIds) && ath.assignedPrescriberIds.includes(currentPrescriber.id)) ||
+        (Array.isArray(currentPrescriber.assignedAthleteIds) && currentPrescriber.assignedAthleteIds.includes(ath.id));
+      if (!isLinked) return false;
+    }
+
     const matchGoal = selectedGoalFilter === 'todos' || ath.goal === selectedGoalFilter;
     const matchStatus =
       selectedStatusFilter === 'todos' ||

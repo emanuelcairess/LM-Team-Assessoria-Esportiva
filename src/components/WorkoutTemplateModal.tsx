@@ -395,7 +395,7 @@ export const WorkoutTemplateModal: React.FC<WorkoutTemplateModalProps> = ({
                         className="w-full py-3 rounded-2xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-amber-950/50"
                       >
                         <Check className="w-4 h-4" />
-                        <span>Substituir no Treino Atual ({activeSplit.code})</span>
+                        <span>Substituir no Treino Atual ({activeSplit?.code || 'Atual'})</span>
                       </button>
                     )}
 

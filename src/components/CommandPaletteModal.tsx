@@ -23,6 +23,8 @@ import {
 } from 'lucide-react';
 import { ModuleType, UserRole, AthleteProfile } from '../types';
 import { soundFx } from '../utils/audio';
+import { useAccessibleModal } from '../hooks/useAccessibleModal';
+import { NAVIGATION_DESTINATIONS } from '../config/navigation';
 
 interface CommandPaletteModalProps {
   isOpen: boolean;
@@ -59,103 +61,31 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const { modalRef } = useAccessibleModal({ isOpen, onClose });
+
   useEffect(() => {
     if (isOpen) {
       setQuery('');
       setSelectedIndex(0);
-      setTimeout(() => inputRef.current?.focus(), 50);
+      setTimeout(() => inputRef.current?.focus(), 60);
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
-  // Build searchable items
-  const navigationItems = [
-    {
-      id: 'nav-dashboard',
-      type: 'module' as const,
-      label: 'Dashboard Executivo',
-      category: 'Módulos',
-      shortcut: '1',
-      icon: LayoutDashboard,
-      color: '#38bdf8',
-      action: () => onSelectModule('dashboard')
-    },
-    {
-      id: 'nav-profile',
-      type: 'module' as const,
-      label: 'Perfil & Avaliação Física (Antropometria)',
-      category: 'Módulos',
-      shortcut: '2',
-      icon: User,
-      color: '#60a5fa',
-      action: () => onSelectModule('profile')
-    },
-    {
-      id: 'nav-nutrition',
-      type: 'module' as const,
-      label: 'Nutrição & Plano Alimentar (Dieta)',
-      category: 'Módulos',
-      shortcut: '3',
-      icon: Utensils,
-      color: '#4ade80',
-      action: () => onSelectModule('nutrition')
-    },
-    {
-      id: 'nav-workout',
-      type: 'module' as const,
-      label: 'Treinamento & Cardio (Séries e Cargas)',
-      category: 'Módulos',
-      shortcut: '4',
-      icon: Dumbbell,
-      color: '#fb923c',
-      action: () => onSelectModule('workout')
-    },
-    {
-      id: 'nav-supplements',
-      type: 'module' as const,
-      label: 'Suplementação & Manipulados',
-      category: 'Módulos',
-      shortcut: '5',
-      icon: Pill,
-      color: '#c084fc',
-      action: () => onSelectModule('supplements')
-    },
-    {
-      id: 'nav-recipes',
-      type: 'module' as const,
-      label: 'Catálogo de Receitas Fit Proteicas',
-      category: 'Módulos',
-      shortcut: '6',
-      icon: ChefHat,
-      color: '#2dd4bf',
-      action: () => onSelectModule('recipes')
-    },
-    {
-      id: 'nav-progress',
-      type: 'module' as const,
-      label: 'Evolução & Gráficos Temporais',
-      category: 'Módulos',
-      shortcut: '7',
-      icon: TrendingUp,
-      color: '#f97316',
-      action: () => onSelectModule('progress')
-    },
-    ...(canSwitchRole && currentRole === 'coach'
-      ? [
-          {
-            id: 'nav-coach',
-            type: 'module' as const,
-            label: 'Painel Clínico do Treinador / Prescritor',
-            category: 'Módulos',
-            shortcut: '8',
-            icon: ShieldAlert,
-            color: '#818cf8',
-            action: () => onSelectModule('coach_admin')
-          }
-        ]
-      : [])
-  ];
+  // Build searchable items using shared navigation definitions
+  const navigationItems = NAVIGATION_DESTINATIONS.filter((d) =>
+    !d.requiresPrescriber || (canSwitchRole && currentRole === 'coach')
+  ).map((dest) => ({
+    id: `nav-${dest.id}`,
+    type: 'module' as const,
+    label: dest.fullTitle,
+    category: 'Módulos',
+    shortcut: dest.shortcut,
+    icon: dest.icon,
+    color: dest.accentColor,
+    action: () => onSelectModule(dest.id)
+  }));
 
   const quickActions = [
     {
@@ -230,12 +160,22 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 sm:pt-24 px-4 bg-black/60 backdrop-blur-md">
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center pt-16 sm:pt-24 px-4 bg-black/60 backdrop-blur-md"
+      role="presentation"
+      onClick={onClose}
+    >
       <motion.div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Paleta de Comandos e Navegação Rápida"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
         initial={{ opacity: 0, scale: 0.96, y: -10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: -10 }}
-        className="w-full max-w-2xl rounded-3xl modal-liquid-glass border border-white/20 shadow-2xl overflow-hidden"
+        className="w-full max-w-2xl rounded-3xl modal-liquid-glass border border-white/20 shadow-2xl overflow-hidden focus:outline-none"
       >
         {/* Search Bar */}
         <div className="p-4 border-b border-white/10 flex items-center gap-3">

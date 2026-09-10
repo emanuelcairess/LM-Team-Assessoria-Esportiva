@@ -22,24 +22,37 @@ import {
   RotateCcw
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { NutritionPlan, Meal, FoodItem } from '../types';
+import { NutritionPlan, Meal, FoodItem, AthleteProfile, PersistenceSyncState } from '../types';
 import { soundFx } from '../utils/audio';
 import { EditNutritionPlanModal } from '../components/EditNutritionPlanModal';
+import { AthletePrescriptionHeader } from '../components/AthletePrescriptionHeader';
 
 interface NutritionViewProps {
+  athlete?: AthleteProfile;
   nutritionPlan: NutritionPlan;
   onToggleMealCompleted: (mealId: string) => void;
   onOpenSubstitution: (food: FoodItem) => void;
   onUpdateNutritionPlan?: (updated: NutritionPlan) => void;
   athleteWeightKg?: number;
+  syncState?: PersistenceSyncState;
+  lastConfirmedTime?: string | null;
+  errorMessage?: string | null;
+  onRetry?: () => void;
+  isLoading?: boolean;
 }
 
 export const NutritionView: React.FC<NutritionViewProps> = ({
+  athlete,
   nutritionPlan,
   onToggleMealCompleted,
   onOpenSubstitution,
   onUpdateNutritionPlan,
-  athleteWeightKg = 80
+  athleteWeightKg = 80,
+  syncState = 'salvo',
+  lastConfirmedTime = null,
+  errorMessage = null,
+  onRetry,
+  isLoading = false
 }) => {
   const [expandedMealId, setExpandedMealId] = useState<string | null>(
     nutritionPlan.meals[0]?.id || 'meal-1'
@@ -165,6 +178,46 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
 
   return (
     <div className="space-y-6 pb-24">
+      {/* Athlete Prescription & Persistence State Machine Header */}
+      {athlete && (
+        <AthletePrescriptionHeader
+          athlete={athlete}
+          title="Prescrição Nutricional"
+          subtitle="Planejamento alimentar individualizado, balanço de macronutrientes e controle de adesão."
+          syncState={syncState}
+          lastConfirmedTime={lastConfirmedTime}
+          errorMessage={errorMessage}
+          onRetry={onRetry}
+          isLoading={isLoading}
+        />
+      )}
+
+      {/* Empty State Banner if no meals exist */}
+      {nutritionPlan.meals.length === 0 && !isLoading && (
+        <div className="p-8 rounded-3xl bg-slate-900/60 border border-white/10 text-center space-y-4">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-400">
+            <Utensils className="w-7 h-7" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-white">Sem dados cadastrados</h3>
+            <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+              O atleta {athlete?.name} não possui refeições ou metas calóricas cadastradas no momento.
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={isLoading}
+            onClick={() => {
+              soundFx.playClick();
+              setIsEditPlanModalOpen(true);
+            }}
+            className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs inline-flex items-center gap-2 shadow-lg"
+          >
+            <Plus className="w-4 h-4" /> Cadastrar Primeiro Plano Alimentar
+          </button>
+        </div>
+      )}
+
       {/* Nutrition Header Card (#2E7D32 Forest Green Theme) */}
       <motion.div
         initial={{ opacity: 0, y: 15 }}
@@ -215,11 +268,12 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
 
             {/* Primary Action: Open Edit Diet Plan Modal */}
             <button
+              disabled={isLoading}
               onClick={() => {
                 soundFx.playClick();
                 setIsEditPlanModalOpen(true);
               }}
-              className="px-4 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50 hover:scale-[1.02] active:scale-95"
+              className="px-4 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50 hover:scale-[1.02] active:scale-95"
             >
               <Edit3 className="w-4 h-4" />
               <span>Editar Plano Alimentar</span>
@@ -653,6 +707,7 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
             onClose={() => setIsEditPlanModalOpen(false)}
             nutritionPlan={nutritionPlan}
             athleteWeightKg={athleteWeightKg}
+            athlete={athlete}
             onSave={(updatedPlan) => {
               if (onUpdateNutritionPlan) {
                 onUpdateNutritionPlan(updatedPlan);

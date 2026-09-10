@@ -32,14 +32,25 @@ import {
   BookOpen
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { WorkoutSplit, Exercise, ExerciseSet, TechniqueType, WorkoutTemplate, LibraryExercise } from '../types';
+import {
+  WorkoutSplit,
+  Exercise,
+  ExerciseSet,
+  TechniqueType,
+  WorkoutTemplate,
+  LibraryExercise,
+  AthleteProfile,
+  PersistenceSyncState
+} from '../types';
 import { soundFx } from '../utils/audio';
 import { WorkoutModal } from '../components/WorkoutModal';
 import { WorkoutTemplateModal } from '../components/WorkoutTemplateModal';
 import { DeleteWorkoutModal } from '../components/DeleteWorkoutModal';
 import { ExercisePickerModal } from '../components/ExercisePickerModal';
+import { AthletePrescriptionHeader } from '../components/AthletePrescriptionHeader';
 
 interface WorkoutViewProps {
+  athlete?: AthleteProfile;
   workoutSplits: WorkoutSplit[];
   onOpenRestTimer: (seconds: number, exerciseName: string, setInfo: string) => void;
   onUpdateSplits: (updated: WorkoutSplit[]) => void;
@@ -50,9 +61,15 @@ interface WorkoutViewProps {
   onSaveExerciseToLibrary?: (exercise: LibraryExercise) => void;
   onDeleteExerciseFromLibrary?: (exerciseId: string) => void;
   onToast: (title: string, message: string) => void;
+  syncState?: PersistenceSyncState;
+  lastConfirmedTime?: string | null;
+  errorMessage?: string | null;
+  onRetry?: () => void;
+  isLoading?: boolean;
 }
 
 export const WorkoutView: React.FC<WorkoutViewProps> = ({
+  athlete,
   workoutSplits,
   onOpenRestTimer,
   onUpdateSplits,
@@ -62,7 +79,12 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
   exerciseLibrary = [],
   onSaveExerciseToLibrary,
   onDeleteExerciseFromLibrary,
-  onToast
+  onToast,
+  syncState = 'salvo',
+  lastConfirmedTime = null,
+  errorMessage = null,
+  onRetry,
+  isLoading = false
 }) => {
   const [selectedSplitId, setSelectedSplitId] = useState<string>(
     workoutSplits[0]?.id || ''
@@ -106,13 +128,17 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
     onUpdateSplits(updated);
   };
 
-  // Helper to update logged weight for a set
+  // Helper to update logged weight for a set (supports decimals with . or ,)
   const handleUpdateLoggedWeight = (
     exerciseId: string,
     setNumber: number,
-    weight: number
+    weightRaw: string | number
   ) => {
     if (!activeSplit) return;
+    const cleanStr = String(weightRaw).replace(',', '.');
+    const parsed = cleanStr === '' ? 0 : parseFloat(cleanStr);
+    const weight = isNaN(parsed) ? 0 : parsed;
+
     const updated = workoutSplits.map((split) => {
       if (split.id !== activeSplit.id) return split;
       return {
@@ -132,7 +158,7 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
     onUpdateSplits(updated);
   };
 
-  // Helper to update actual reps performed
+  // Helper to update actual reps performed (without overwriting prescriber's repsTarget)
   const handleUpdateLoggedReps = (
     exerciseId: string,
     setNumber: number,
@@ -149,7 +175,7 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
             ...ex,
             sets: ex.sets.map((s) => {
               if (s.setNumber !== setNumber) return s;
-              return { ...s, repsTarget: reps };
+              return { ...s, repsLogged: reps };
             })
           };
         })
@@ -352,22 +378,53 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
 
   if (!activeSplit) {
     return (
-      <div className="p-12 text-center rounded-3xl liquid-glass border border-white/10 space-y-4">
-        <Dumbbell className="w-12 h-12 text-orange-400 mx-auto" />
-        <h3 className="text-xl font-bold text-white">Nenhum dia cadastrado na periodização</h3>
-        <p className="text-xs text-slate-400">Inclua de 1 a 7 dias de musculação, cardio ou descanso para o aluno.</p>
-        <button
-          onClick={handleOpenAddSplit}
-          className="px-6 py-3 rounded-2xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs shadow-lg shadow-orange-950/50"
-        >
-          + Incluir Primeiro Dia
-        </button>
+      <div className="space-y-6 pb-28">
+        {athlete && (
+          <AthletePrescriptionHeader
+            athlete={athlete}
+            title="Prescrição de Treino & Periodização"
+            subtitle="Divisões semanais, séries, repetições, cadência e prescrição de cardio."
+            syncState={syncState}
+            lastConfirmedTime={lastConfirmedTime}
+            errorMessage={errorMessage}
+            onRetry={onRetry}
+            isLoading={isLoading}
+          />
+        )}
+        <div className="p-12 text-center rounded-3xl liquid-glass border border-white/10 space-y-4">
+          <Dumbbell className="w-12 h-12 text-orange-400 mx-auto" />
+          <h3 className="text-xl font-bold text-white">Sem divisões de treino cadastradas</h3>
+          <p className="text-xs text-slate-400 max-w-md mx-auto">
+            O atleta {athlete?.name} não possui nenhum dia cadastrado na grade de treinos semanal.
+          </p>
+          <button
+            disabled={isLoading}
+            onClick={handleOpenAddSplit}
+            className="px-6 py-3 rounded-2xl bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-bold text-xs shadow-lg shadow-orange-950/50"
+          >
+            + Incluir Primeiro Dia
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-6 pb-28">
+      {/* Athlete Prescription & Persistence State Machine Header */}
+      {athlete && (
+        <AthletePrescriptionHeader
+          athlete={athlete}
+          title="Prescrição de Treino & Periodização"
+          subtitle="Divisões semanais, séries, repetições, cadência e prescrição de cardio."
+          syncState={syncState}
+          lastConfirmedTime={lastConfirmedTime}
+          errorMessage={errorMessage}
+          onRetry={onRetry}
+          isLoading={isLoading}
+        />
+      )}
+
       {/* Top Prescriber Control Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 sm:p-4 rounded-3xl liquid-glass border border-white/10 bg-black/40">
         <div className="flex items-center gap-2">
@@ -545,42 +602,76 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
         )}
       </div>
 
-      {/* Main Active Workout Header Card */}
-      <motion.div
-        key={activeSplit.id}
-        initial={{ opacity: 0, y: 15 }}
-        animate={{ opacity: 1, y: 0 }}
-        className={`rounded-3xl liquid-glass hero-workout p-6 sm:p-7 shadow-2xl relative overflow-hidden border ${
-          isRestDay
-            ? 'border-blue-500/30 bg-gradient-to-r from-blue-950/60 via-slate-900/80 to-slate-950/80'
-            : isCardioOnlyDay
-            ? 'border-teal-500/30 bg-gradient-to-r from-teal-950/60 via-slate-900/80 to-slate-950/80'
-            : 'border-orange-500/30'
-        }`}
-      >
-        <div className={`absolute top-0 right-0 w-96 h-96 rounded-full blur-3xl pointer-events-none ${
-          isRestDay ? 'bg-blue-600/15' : isCardioOnlyDay ? 'bg-teal-600/15' : 'bg-orange-600/15'
-        }`} />
+      {/* Empty State when no split exists */}
+      {!activeSplit ? (
+        <div className="rounded-3xl liquid-glass border border-white/10 p-8 sm:p-12 text-center space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mx-auto text-slate-400">
+            <Dumbbell className="w-8 h-8" />
+          </div>
+          <div className="max-w-md mx-auto space-y-2">
+            <h3 className="text-xl font-bold text-white">Nenhum dia de treino cadastrado</h3>
+            <p className="text-xs text-slate-400">
+              Esta periodização ainda não possui dias configurados. Adicione um novo dia manualmente ou utilize um dos modelos salvos.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            <button
+              onClick={handleOpenAddSplit}
+              className="px-5 py-3 rounded-2xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs transition flex items-center gap-2 shadow-lg shadow-orange-950/50"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ Incluir Primeiro Dia</span>
+            </button>
+            <button
+              onClick={() => {
+                soundFx.playClick();
+                setIsTemplateModalOpen(true);
+              }}
+              className="px-5 py-3 rounded-2xl bg-white/10 hover:bg-white/15 text-amber-300 font-bold text-xs transition flex items-center gap-2 border border-amber-500/30"
+            >
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              <span>Carregar de Template</span>
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Main Active Workout Header Card */}
+          <motion.div
+            key={activeSplit.id}
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={`rounded-3xl liquid-glass hero-workout p-6 sm:p-7 shadow-2xl relative overflow-hidden border ${
+              isRestDay
+                ? 'border-blue-500/30 bg-gradient-to-r from-blue-950/60 via-slate-900/80 to-slate-950/80'
+                : isCardioOnlyDay
+                ? 'border-teal-500/30 bg-gradient-to-r from-teal-950/60 via-slate-900/80 to-slate-950/80'
+                : 'border-orange-500/30'
+            }`}
+          >
+            <div className={`absolute top-0 right-0 w-96 h-96 rounded-full blur-3xl pointer-events-none ${
+              isRestDay ? 'bg-blue-600/15' : isCardioOnlyDay ? 'bg-teal-600/15' : 'bg-orange-600/15'
+            }`} />
 
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-1.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className={`px-3 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider text-white shadow-sm ${
-                isRestDay ? 'bg-blue-600' : isCardioOnlyDay ? 'bg-teal-600' : 'bg-orange-600'
-              }`}>
-                {activeSplit.code}
-              </span>
-              <span className="px-3 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                <Calendar className="w-3 h-3" />
-                {activeSplit.dayOfWeek}
-              </span>
-              {activeSplit.estimatedDurationMinutes > 0 && (
-                <span className="text-xs text-slate-300 font-semibold flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-orange-400" />
-                  {activeSplit.estimatedDurationMinutes} min
-                </span>
-              )}
-            </div>
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div className="space-y-1.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`px-3 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider text-white shadow-sm ${
+                    isRestDay ? 'bg-blue-600' : isCardioOnlyDay ? 'bg-teal-600' : 'bg-orange-600'
+                  }`}>
+                    {activeSplit.code || 'Treino'}
+                  </span>
+                  <span className="px-3 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                    <Calendar className="w-3 h-3" />
+                    {activeSplit.dayOfWeek || ''}
+                  </span>
+                  {(activeSplit.estimatedDurationMinutes || 0) > 0 && (
+                    <span className="text-xs text-slate-300 font-semibold flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-orange-400" />
+                      {activeSplit.estimatedDurationMinutes} min
+                    </span>
+                  )}
+                </div>
 
             <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
               {activeSplit.name}
@@ -972,105 +1063,277 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
                     </div>
                   )}
 
-                  {/* Sets Table */}
-                  <div className="p-4 sm:p-5 space-y-2">
-                    <div className="grid grid-cols-12 text-[10px] font-bold uppercase text-slate-400 px-3">
-                      <span className="col-span-2">Série</span>
-                      <span className="col-span-3">Meta Reps</span>
-                      <span className="col-span-3">Carga (kg)</span>
-                      <span className="col-span-2">Técnica</span>
-                      <span className="col-span-2 text-right">Status</span>
-                    </div>
+                  {/* Sets Section: Responsive Desktop Table and Mobile Cards */}
+                  <div className="p-4 sm:p-5 space-y-3">
+                    {/* Desktop View (Table >= md) */}
+                    <div className="hidden md:block space-y-2">
+                      <div className="grid grid-cols-12 text-[10px] font-bold uppercase text-slate-400 px-3 py-1">
+                        <span className="col-span-2">Série</span>
+                        <span className="col-span-2">Meta Prescrita</span>
+                        <span className="col-span-3">Reps Realizadas</span>
+                        <span className="col-span-2">Carga (kg)</span>
+                        <span className="col-span-1 text-center">Técnica</span>
+                        <span className="col-span-2 text-right">Ação</span>
+                      </div>
 
-                    {exercise.sets.map((set) => (
-                      <div
-                        key={set.setNumber}
-                        className={`grid grid-cols-12 items-center p-3 rounded-2xl transition border ${
-                          set.isCompleted
-                            ? 'bg-emerald-950/30 border-emerald-500/30'
-                            : 'bg-black/30 border-white/5 hover:border-white/15'
-                        }`}
-                      >
-                        {/* Set Number */}
-                        <div className="col-span-2 flex items-center gap-2">
-                          <span
-                            className={`w-6 h-6 rounded-lg text-xs font-bold flex items-center justify-center ${
-                              set.isCompleted
-                                ? 'bg-emerald-600 text-white'
-                                : 'bg-white/10 text-slate-300'
-                            }`}
-                          >
-                            {set.setNumber}
-                          </span>
-                        </div>
+                      {exercise.sets.map((set) => (
+                        <div
+                          key={`desktop-${set.setNumber}`}
+                          className={`grid grid-cols-12 items-center p-3 rounded-2xl transition border ${
+                            set.isCompleted
+                              ? 'bg-emerald-950/30 border-emerald-500/30'
+                              : 'bg-black/30 border-white/5 hover:border-white/15'
+                          }`}
+                        >
+                          {/* Set Number */}
+                          <div className="col-span-2 flex items-center gap-2">
+                            <span
+                              className={`w-7 h-7 rounded-xl text-xs font-black flex items-center justify-center ${
+                                set.isCompleted
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'bg-white/10 text-slate-200'
+                              }`}
+                            >
+                              {set.setNumber}
+                            </span>
+                            <span className="text-xs font-bold text-slate-300">
+                              Série {set.setNumber}
+                            </span>
+                          </div>
 
-                        {/* Reps Target */}
-                        <div className="col-span-3">
-                          <input
-                            type="text"
-                            value={set.repsTarget}
-                            onChange={(e) =>
-                              handleUpdateLoggedReps(
-                                exercise.id,
-                                set.setNumber,
-                                e.target.value
-                              )
-                            }
-                            className="w-20 px-2 py-1 rounded-lg bg-black/40 border border-white/10 text-xs text-white font-bold focus:outline-none focus:border-orange-500"
-                          />
-                        </div>
+                          {/* Prescribed Target (Preserved and visually distinct) */}
+                          <div className="col-span-2">
+                            <span className="inline-flex items-center px-2 py-1 rounded-lg text-xs font-mono font-bold bg-orange-950/50 text-orange-300 border border-orange-500/30">
+                              {set.repsTarget} reps
+                            </span>
+                          </div>
 
-                        {/* Weight Logged */}
-                        <div className="col-span-3">
-                          <div className="flex items-center gap-1">
+                          {/* Reps Logged */}
+                          <div className="col-span-3">
+                            <label htmlFor={`d-reps-${exercise.id}-${set.setNumber}`} className="sr-only">
+                              Repetições realizadas da série {set.setNumber}
+                            </label>
                             <input
-                              type="number"
-                              value={set.weightKgLogged || ''}
+                              id={`d-reps-${exercise.id}-${set.setNumber}`}
+                              type="text"
+                              inputMode="numeric"
+                              value={set.repsLogged ?? ''}
                               onChange={(e) =>
-                                handleUpdateLoggedWeight(
+                                handleUpdateLoggedReps(
                                   exercise.id,
                                   set.setNumber,
-                                  parseFloat(e.target.value) || 0
+                                  e.target.value
                                 )
                               }
-                              placeholder="0"
-                              className="w-16 px-2 py-1 rounded-lg bg-black/40 border border-white/10 text-xs text-amber-300 font-bold focus:outline-none focus:border-orange-500"
+                              placeholder={set.repsTarget}
+                              className="w-24 px-2.5 py-1.5 rounded-xl bg-black/50 border border-white/15 text-xs text-white font-bold focus:outline-none focus:border-orange-500"
                             />
-                            <span className="text-[10px] text-slate-400">kg</span>
+                          </div>
+
+                          {/* Weight Logged */}
+                          <div className="col-span-2">
+                            <div className="flex items-center gap-1.5">
+                              <label htmlFor={`d-weight-${exercise.id}-${set.setNumber}`} className="sr-only">
+                                Carga em kg da série {set.setNumber}
+                              </label>
+                              <input
+                                id={`d-weight-${exercise.id}-${set.setNumber}`}
+                                type="text"
+                                inputMode="decimal"
+                                value={
+                                  set.weightKgLogged !== undefined && set.weightKgLogged !== 0
+                                    ? set.weightKgLogged
+                                    : ''
+                                }
+                                onChange={(e) =>
+                                  handleUpdateLoggedWeight(
+                                    exercise.id,
+                                    set.setNumber,
+                                    e.target.value
+                                  )
+                                }
+                                placeholder="0"
+                                className="w-18 px-2.5 py-1.5 rounded-xl bg-black/50 border border-white/15 text-xs text-amber-300 font-bold focus:outline-none focus:border-orange-500"
+                              />
+                              <span className="text-xs font-bold text-slate-400">kg</span>
+                            </div>
+                          </div>
+
+                          {/* Technique Badge */}
+                          <div className="col-span-1 text-center">
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-white/5 text-orange-300 border border-white/10 whitespace-nowrap">
+                              {set.technique}
+                            </span>
+                          </div>
+
+                          {/* Complete Toggle Button */}
+                          <div className="col-span-2 text-right">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleToggleSetCompleted(exercise.id, set.setNumber)
+                              }
+                              className={`px-3 py-1.5 rounded-xl inline-flex items-center gap-1.5 text-xs font-bold transition border min-h-[36px] ${
+                                set.isCompleted
+                                  ? 'bg-emerald-600 border-emerald-400 text-white shadow-md shadow-emerald-950/50'
+                                  : 'bg-white/5 hover:bg-white/15 border-white/10 text-slate-300'
+                              }`}
+                              title={set.isCompleted ? 'Desfazer conclusão da série' : 'Marcar série como realizada'}
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>{set.isCompleted ? 'Concluída' : 'Pendente'}</span>
+                            </button>
                           </div>
                         </div>
+                      ))}
+                    </div>
 
-                        {/* Technique Badge */}
-                        <div className="col-span-2">
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-white/5 text-orange-300 border border-white/5 whitespace-nowrap">
-                            {set.technique}
-                          </span>
-                        </div>
+                    {/* Mobile View (Touch-friendly Cards < md) */}
+                    <div className="block md:hidden space-y-3">
+                      {exercise.sets.map((set) => (
+                        <div
+                          key={`mobile-${set.setNumber}`}
+                          className={`p-4 rounded-2xl border space-y-3 transition ${
+                            set.isCompleted
+                              ? 'bg-emerald-950/25 border-emerald-500/35 shadow-sm'
+                              : 'bg-black/35 border-white/10'
+                          }`}
+                        >
+                          {/* Card Header: Set Number, Technique and Rest Timer */}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`w-7 h-7 rounded-xl text-xs font-black flex items-center justify-center ${
+                                  set.isCompleted
+                                    ? 'bg-emerald-600 text-white'
+                                    : 'bg-white/10 text-slate-200'
+                                }`}
+                              >
+                                {set.setNumber}
+                              </span>
+                              <span className="text-sm font-bold text-white">
+                                Série {set.setNumber}
+                              </span>
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-white/5 text-orange-300 border border-white/10">
+                                {set.technique}
+                              </span>
+                            </div>
 
-                        {/* Complete Checkbox */}
-                        <div className="col-span-2 text-right">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onOpenRestTimer(
+                                  exercise.restSeconds || 60,
+                                  exercise.name,
+                                  `Série ${set.setNumber} de ${exercise.sets.length}`
+                                )
+                              }
+                              className="px-2.5 py-1 rounded-xl bg-orange-950/40 border border-orange-500/30 text-orange-300 text-xs font-bold flex items-center gap-1 min-h-[36px]"
+                              title="Iniciar cronômetro de descanso"
+                            >
+                              <Timer className="w-3.5 h-3.5" />
+                              <span>{exercise.restSeconds || 60}s</span>
+                            </button>
+                          </div>
+
+                          {/* Prescribed Target Banner */}
+                          <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-orange-950/30 border border-orange-500/20 text-xs text-orange-200">
+                            <span className="text-[11px] font-semibold text-orange-300/80">Meta do Treinador:</span>
+                            <span className="font-bold font-mono text-orange-300 bg-orange-950/60 px-2 py-0.5 rounded-md border border-orange-500/30">
+                              {set.repsTarget} reps
+                            </span>
+                          </div>
+
+                          {/* Dual Inputs: Reps Realizadas + Carga (kg) */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label
+                                htmlFor={`m-reps-${exercise.id}-${set.setNumber}`}
+                                className="text-[11px] font-bold text-slate-300"
+                              >
+                                Repetições
+                              </label>
+                              <input
+                                id={`m-reps-${exercise.id}-${set.setNumber}`}
+                                type="text"
+                                inputMode="numeric"
+                                value={set.repsLogged ?? ''}
+                                onChange={(e) =>
+                                  handleUpdateLoggedReps(
+                                    exercise.id,
+                                    set.setNumber,
+                                    e.target.value
+                                  )
+                                }
+                                placeholder={set.repsTarget}
+                                className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/20 text-sm text-white font-bold focus:outline-none focus:border-orange-500 min-h-[44px]"
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <label
+                                htmlFor={`m-weight-${exercise.id}-${set.setNumber}`}
+                                className="text-[11px] font-bold text-slate-300"
+                              >
+                                Carga (kg)
+                              </label>
+                              <div className="relative">
+                                <input
+                                  id={`m-weight-${exercise.id}-${set.setNumber}`}
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={
+                                    set.weightKgLogged !== undefined && set.weightKgLogged !== 0
+                                      ? set.weightKgLogged
+                                      : ''
+                                  }
+                                  onChange={(e) =>
+                                    handleUpdateLoggedWeight(
+                                      exercise.id,
+                                      set.setNumber,
+                                      e.target.value
+                                    )
+                                  }
+                                  placeholder="0.0"
+                                  className="w-full px-3 py-2 pr-8 rounded-xl bg-black/60 border border-white/20 text-sm text-amber-300 font-bold focus:outline-none focus:border-orange-500 min-h-[44px]"
+                                />
+                                <span className="absolute right-3 top-2.5 text-xs font-bold text-slate-400 pointer-events-none">
+                                  kg
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Complete / Undo Action Button */}
                           <button
+                            type="button"
                             onClick={() =>
                               handleToggleSetCompleted(exercise.id, set.setNumber)
                             }
-                            className={`w-8 h-8 rounded-xl inline-flex items-center justify-center transition border ${
+                            className={`w-full py-3 px-4 rounded-xl flex items-center justify-center gap-2 font-bold text-xs transition border min-h-[44px] ${
                               set.isCompleted
-                                ? 'bg-emerald-600 border-emerald-400 text-white shadow-md shadow-emerald-950/50'
-                                : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-400'
+                                ? 'bg-emerald-600 border-emerald-400 text-white shadow-lg shadow-emerald-950/40'
+                                : 'bg-white/5 hover:bg-white/10 border-white/15 text-slate-200'
                             }`}
-                            title="Marcar série como realizada"
                           >
                             <Check className="w-4 h-4" />
+                            <span>
+                              {set.isCompleted
+                                ? 'Série Concluída ✓ (Toque para desfazer)'
+                                : 'Marcar Série como Realizada'}
+                            </span>
                           </button>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
                 </motion.div>
               );
             })
           )}
         </div>
+      )}
+        </>
       )}
 
       {/* MODALS */}
@@ -1088,6 +1351,7 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
           exerciseLibrary={exerciseLibrary}
           onSaveExerciseToLibrary={onSaveExerciseToLibrary}
           onDeleteExerciseFromLibrary={onDeleteExerciseFromLibrary}
+          athlete={athlete}
         />
       )}
 

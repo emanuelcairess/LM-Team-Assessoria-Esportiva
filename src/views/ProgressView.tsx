@@ -29,35 +29,29 @@ interface ProgressViewProps {
 export const ProgressView: React.FC<ProgressViewProps> = ({ athlete, onOpenReportModal }) => {
   const [isProgressPdfOpen, setIsProgressPdfOpen] = useState<boolean>(false);
   const history = athlete.measurementsHistory || [];
-  const defaultMeasurement: AnthropometricData = {
-    date: new Date().toISOString().split('T')[0],
-    weightKg: athlete.currentWeightKg || 70,
-    heightCm: athlete.heightCm || 175,
-    bodyFatPercentage: 12,
-    muscleMassKg: 35,
-    chestCm: 100,
-    shouldersCm: 115,
-    waistCm: 80,
-    abdomenCm: 82,
-    rightArmCm: 38,
-    leftArmCm: 38,
-    rightThighCm: 58,
-    leftThighCm: 58,
-    calvesCm: 38,
-    glutesCm: 98,
-    neckCm: 38,
-    notes: 'Avaliação inicial'
-  };
+  const hasHistory = history.length > 0;
 
-  const initialData = history[0] || defaultMeasurement;
-  const latestData = history[history.length - 1] || initialData;
+  const initialData = hasHistory ? history[0] : ({} as Partial<AnthropometricData>);
+  const latestData = hasHistory ? history[history.length - 1] : ({} as Partial<AnthropometricData>);
 
-  const weightDelta = Number((latestData.weightKg - initialData.weightKg).toFixed(1));
-  const fatDelta = Number((latestData.bodyFatPercentage - initialData.bodyFatPercentage).toFixed(1));
-  const muscleDelta = Number((latestData.muscleMassKg - initialData.muscleMassKg).toFixed(1));
-  const waistDelta = Number((latestData.waistCm - initialData.waistCm).toFixed(1));
-  const armDelta = Number((latestData.rightArmCm - initialData.rightArmCm).toFixed(1));
-  const chestDelta = Number((latestData.chestCm - initialData.chestCm).toFixed(1));
+  const weightDelta = (latestData.weightKg && initialData.weightKg)
+    ? Number((latestData.weightKg - initialData.weightKg).toFixed(1))
+    : null;
+  const fatDelta = (latestData.bodyFatPercentage !== undefined && initialData.bodyFatPercentage !== undefined)
+    ? Number((latestData.bodyFatPercentage - initialData.bodyFatPercentage).toFixed(1))
+    : null;
+  const muscleDelta = (latestData.muscleMassKg && initialData.muscleMassKg)
+    ? Number((latestData.muscleMassKg - initialData.muscleMassKg).toFixed(1))
+    : null;
+  const waistDelta = (latestData.waistCm && initialData.waistCm)
+    ? Number((latestData.waistCm - initialData.waistCm).toFixed(1))
+    : null;
+  const armDelta = (latestData.rightArmCm && initialData.rightArmCm)
+    ? Number((latestData.rightArmCm - initialData.rightArmCm).toFixed(1))
+    : null;
+  const chestDelta = (latestData.chestCm && initialData.chestCm)
+    ? Number((latestData.chestCm - initialData.chestCm).toFixed(1))
+    : null;
 
   // Interactive Before / After Slider Position (0 to 100)
   const [sliderPos, setSliderPos] = useState<number>(50);
@@ -94,7 +88,9 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ athlete, onOpenRepor
               Evolução Física & Comparativo Temporal
             </h2>
             <p className="text-xs text-slate-300 mt-1">
-              Progressão biométrica de {new Date(initialData.date).toLocaleDateString('pt-BR')} até {new Date(latestData.date).toLocaleDateString('pt-BR')}
+              {hasHistory && initialData.date && latestData.date
+                ? `Progressão biométrica de ${new Date(initialData.date).toLocaleDateString('pt-BR')} até ${new Date(latestData.date).toLocaleDateString('pt-BR')}`
+                : 'Aguardando registro de medições antropométricas'}
             </p>
           </div>
 
@@ -103,7 +99,8 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ athlete, onOpenRepor
             <button
               type="button"
               onClick={handleOpenPdf}
-              className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-orange-600 via-amber-600 to-orange-500 hover:from-orange-500 hover:to-amber-500 text-white text-xs font-black shadow-xl shadow-orange-950/40 border border-orange-400/40 transition active:scale-95 group"
+              disabled={!hasHistory}
+              className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-orange-600 via-amber-600 to-orange-500 hover:from-orange-500 hover:to-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-black shadow-xl shadow-orange-950/40 border border-orange-400/40 transition active:scale-95 group"
             >
               <FileText className="w-4 h-4 text-orange-200 group-hover:scale-110 transition" />
               <span>Gerar Relatório PDF</span>
@@ -113,12 +110,16 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ athlete, onOpenRepor
             <div className="flex items-center gap-3 bg-white/5 p-2.5 sm:p-3 rounded-2xl border border-white/10">
               <div className="text-center px-2">
                 <p className="text-[9px] uppercase font-bold text-slate-400">Ganho Massa</p>
-                <p className="text-xl sm:text-2xl font-black text-emerald-400">+{muscleDelta} kg</p>
+                <p className="text-xl sm:text-2xl font-black text-emerald-400">
+                  {muscleDelta !== null ? `${muscleDelta > 0 ? '+' : ''}${muscleDelta} kg` : 'Não informado'}
+                </p>
               </div>
               <div className="w-px h-8 bg-white/10" />
               <div className="text-center px-2">
                 <p className="text-[9px] uppercase font-bold text-slate-400">Redução BF</p>
-                <p className="text-xl sm:text-2xl font-black text-amber-400">{fatDelta}%</p>
+                <p className="text-xl sm:text-2xl font-black text-amber-400">
+                  {fatDelta !== null ? `${fatDelta}%` : 'Não informado'}
+                </p>
               </div>
             </div>
           </div>
@@ -133,8 +134,12 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ athlete, onOpenRepor
           className="p-3.5 rounded-2xl liquid-glass border border-white/10 text-center"
         >
           <span className="text-[10px] uppercase font-bold text-slate-400">Peso Total</span>
-          <p className="text-lg font-black text-white mt-0.5">{latestData.weightKg} kg</p>
-          <span className="text-[11px] font-bold text-emerald-400">+{weightDelta} kg</span>
+          <p className="text-lg font-black text-white mt-0.5">
+            {latestData.weightKg ? `${latestData.weightKg} kg` : 'Não informado'}
+          </p>
+          <span className="text-[11px] font-bold text-emerald-400">
+            {weightDelta !== null ? `${weightDelta > 0 ? '+' : ''}${weightDelta} kg` : '-'}
+          </span>
         </motion.div>
 
         <motion.div
@@ -144,8 +149,12 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ athlete, onOpenRepor
           className="p-3.5 rounded-2xl liquid-glass border border-emerald-500/20 text-center"
         >
           <span className="text-[10px] uppercase font-bold text-emerald-400">Cintura</span>
-          <p className="text-lg font-black text-white mt-0.5">{latestData.waistCm} cm</p>
-          <span className="text-[11px] font-bold text-emerald-400">{waistDelta} cm</span>
+          <p className="text-lg font-black text-white mt-0.5">
+            {latestData.waistCm ? `${latestData.waistCm} cm` : 'Não informado'}
+          </p>
+          <span className="text-[11px] font-bold text-emerald-400">
+            {waistDelta !== null ? `${waistDelta > 0 ? '+' : ''}${waistDelta} cm` : '-'}
+          </span>
         </motion.div>
 
         <motion.div
@@ -155,8 +164,12 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ athlete, onOpenRepor
           className="p-3.5 rounded-2xl liquid-glass border border-white/10 text-center"
         >
           <span className="text-[10px] uppercase font-bold text-slate-400">Braço Dir.</span>
-          <p className="text-lg font-black text-white mt-0.5">{latestData.rightArmCm} cm</p>
-          <span className="text-[11px] font-bold text-emerald-400">+{armDelta} cm</span>
+          <p className="text-lg font-black text-white mt-0.5">
+            {latestData.rightArmCm ? `${latestData.rightArmCm} cm` : 'Não informado'}
+          </p>
+          <span className="text-[11px] font-bold text-emerald-400">
+            {armDelta !== null ? `${armDelta > 0 ? '+' : ''}${armDelta} cm` : '-'}
+          </span>
         </motion.div>
 
         <motion.div
@@ -166,8 +179,12 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ athlete, onOpenRepor
           className="p-3.5 rounded-2xl liquid-glass border border-white/10 text-center"
         >
           <span className="text-[10px] uppercase font-bold text-slate-400">Tórax</span>
-          <p className="text-lg font-black text-white mt-0.5">{latestData.chestCm} cm</p>
-          <span className="text-[11px] font-bold text-emerald-400">+{chestDelta} cm</span>
+          <p className="text-lg font-black text-white mt-0.5">
+            {latestData.chestCm ? `${latestData.chestCm} cm` : 'Não informado'}
+          </p>
+          <span className="text-[11px] font-bold text-emerald-400">
+            {chestDelta !== null ? `${chestDelta > 0 ? '+' : ''}${chestDelta} cm` : '-'}
+          </span>
         </motion.div>
 
         <motion.div
@@ -177,8 +194,14 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ athlete, onOpenRepor
           className="p-3.5 rounded-2xl liquid-glass border border-white/10 text-center"
         >
           <span className="text-[10px] uppercase font-bold text-slate-400">Coxa Dir.</span>
-          <p className="text-lg font-black text-white mt-0.5">{latestData.rightThighCm} cm</p>
-          <span className="text-[11px] font-bold text-emerald-400">+{(latestData.rightThighCm - initialData.rightThighCm).toFixed(1)} cm</span>
+          <p className="text-lg font-black text-white mt-0.5">
+            {latestData.rightThighCm ? `${latestData.rightThighCm} cm` : 'Não informado'}
+          </p>
+          <span className="text-[11px] font-bold text-emerald-400">
+            {latestData.rightThighCm && initialData.rightThighCm
+              ? `${(latestData.rightThighCm - initialData.rightThighCm).toFixed(1)} cm`
+              : '-'}
+          </span>
         </motion.div>
 
         <motion.div
@@ -188,8 +211,12 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ athlete, onOpenRepor
           className="p-3.5 rounded-2xl liquid-glass border border-white/10 text-center"
         >
           <span className="text-[10px] uppercase font-bold text-slate-400">% Gordura</span>
-          <p className="text-lg font-black text-emerald-400 mt-0.5">{latestData.bodyFatPercentage}%</p>
-          <span className="text-[11px] font-bold text-emerald-400">{fatDelta}%</span>
+          <p className="text-lg font-black text-emerald-400 mt-0.5">
+            {latestData.bodyFatPercentage !== undefined ? `${latestData.bodyFatPercentage}%` : 'Não informado'}
+          </p>
+          <span className="text-[11px] font-bold text-emerald-400">
+            {fatDelta !== null ? `${fatDelta}%` : '-'}
+          </span>
         </motion.div>
       </div>
 

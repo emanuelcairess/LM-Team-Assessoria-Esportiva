@@ -83,7 +83,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const carbsProgress = Math.min(100, Math.round((consumedCarbs / nutritionPlan.dailyTargetCarbsG) * 100));
   const fatProgress = Math.min(100, Math.round((consumedFat / nutritionPlan.dailyTargetFatG) * 100));
 
-  const todayWorkout = workoutSplits[0]; // Treino A (Upper)
+  const weekDaysMap: Record<number, string> = {
+    0: 'Domingo',
+    1: 'Segunda-feira',
+    2: 'Terça-feira',
+    3: 'Quarta-feira',
+    4: 'Quinta-feira',
+    5: 'Sexta-feira',
+    6: 'Sábado'
+  };
+  const currentDayName = weekDaysMap[new Date().getDay()];
+  const todayWorkout: WorkoutSplit | undefined = 
+    workoutSplits?.find((s) => s.dayOfWeek && s.dayOfWeek.toLowerCase().startsWith(currentDayName.slice(0, 3).toLowerCase())) ||
+    (workoutSplits && workoutSplits.length > 0 ? workoutSplits[0] : undefined);
   const completedSuppsCount = supplements.filter((s) => s.isTakenToday).length;
 
   return (
@@ -353,9 +365,62 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* Today's Workout Quick Banner (Interactive Player Launcher / Rest / Cardio) */}
       {(() => {
-        const hasCardio = Boolean(todayWorkout?.cardioOrientation?.enabled || todayWorkout?.cardioProtocol);
-        const isRest = (todayWorkout?.exercises?.length || 0) === 0 && !hasCardio;
-        const isCardioOnly = (todayWorkout?.exercises?.length || 0) === 0 && hasCardio;
+        if (!todayWorkout) {
+          return (
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="relative rounded-3xl overflow-hidden liquid-glass border border-white/10 p-6 shadow-xl bg-gradient-to-r from-slate-900/80 via-slate-900/60 to-slate-950/80"
+            >
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white shadow-lg shrink-0 bg-gradient-to-br from-slate-700 to-slate-800">
+                    <Dumbbell className="w-7 h-7 text-slate-300" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider text-slate-300 bg-white/10">
+                        Periodização
+                      </span>
+                      <span className="text-xs font-semibold text-slate-400">
+                        {currentDayName}
+                      </span>
+                    </div>
+                    <h3 className="text-lg sm:text-xl font-black text-white mt-1">
+                      Nenhum treino programado
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Consulte a grade semanal ou adicione uma prescrição de treino para este dia.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    soundFx.playClick();
+                    onStartTodayWorkout();
+                  }}
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl font-black text-sm shadow-xl transition transform active:scale-95 text-white bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 shadow-orange-950/50"
+                >
+                  <span>Ver Grade de Treinos</span>
+                  <ArrowUpRight className="w-4 h-4" />
+                </button>
+              </div>
+            </motion.div>
+          );
+        }
+
+        const hasCardio = Boolean(todayWorkout.cardioOrientation?.enabled || todayWorkout.cardioProtocol);
+        const exercisesCount = todayWorkout.exercises?.length || 0;
+        const isRest = exercisesCount === 0 && !hasCardio;
+        const isCardioOnly = exercisesCount === 0 && hasCardio;
+        const workoutCode = todayWorkout.code || 'Treino';
+        const workoutDay = todayWorkout.dayOfWeek || currentDayName;
+        const workoutName = todayWorkout.name || 'Treino do Dia';
+        const targetMuscles = todayWorkout.targetMuscleGroups && todayWorkout.targetMuscleGroups.length > 0
+          ? todayWorkout.targetMuscleGroups.join(', ')
+          : 'Geral';
 
         return (
           <motion.div
@@ -396,25 +461,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         isRest ? 'bg-blue-600' : isCardioOnly ? 'bg-teal-600' : 'bg-orange-600'
                       }`}
                     >
-                      {todayWorkout.code}
+                      {workoutCode}
                     </span>
                     <span
                       className={`text-xs font-semibold ${
                         isRest ? 'text-blue-300' : isCardioOnly ? 'text-teal-300' : 'text-orange-400'
                       }`}
                     >
-                      {todayWorkout.dayOfWeek}
+                      {workoutDay}
                     </span>
                   </div>
                   <h3 className="text-lg sm:text-xl font-black text-white mt-1">
-                    {todayWorkout.name}
+                    {workoutName}
                   </h3>
                   <p className="text-xs text-slate-300 mt-0.5">
                     {isRest
                       ? 'Descanso e Regeneração Muscular • 0 séries • Foco Sono & Dieta'
                       : isCardioOnly
-                      ? `Cardio Exclusivo • ${todayWorkout.estimatedDurationMinutes} min • Foco Oxidação Lipídica`
-                      : `${todayWorkout.exercises.length} Exercícios • Tempo estimado: ${todayWorkout.estimatedDurationMinutes} min • Foco ${todayWorkout.targetMuscleGroups.join(', ')}`}
+                      ? `Cardio Exclusivo • ${todayWorkout.estimatedDurationMinutes || 0} min • Foco Oxidação Lipídica`
+                      : `${exercisesCount} Exercícios • Tempo estimado: ${todayWorkout.estimatedDurationMinutes || 0} min • Foco ${targetMuscles}`}
                   </p>
                 </div>
               </div>

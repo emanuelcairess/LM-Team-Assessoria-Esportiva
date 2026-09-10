@@ -21,7 +21,7 @@ import {
   ChevronUp,
   AlertCircle
 } from 'lucide-react';
-import { SupplementItem, SupplementCategory, FormulaComponent } from '../types';
+import { SupplementItem, SupplementCategory, FormulaComponent, AthleteProfile } from '../types';
 import { soundFx } from '../utils/audio';
 
 interface SupplementModalProps {
@@ -30,6 +30,7 @@ interface SupplementModalProps {
   onSave: (supplement: SupplementItem, saveAsTemplate?: boolean) => void;
   supplementToEdit?: SupplementItem | null;
   prescriberName?: string;
+  athlete?: AthleteProfile;
 }
 
 const CATEGORY_OPTIONS: { id: SupplementCategory; label: string; icon: string; desc: string }[] = [
@@ -69,7 +70,8 @@ export const SupplementModal: React.FC<SupplementModalProps> = ({
   onClose,
   onSave,
   supplementToEdit,
-  prescriberName = 'Dr. Rodrigo Albuquerque'
+  prescriberName = 'Dr. Rodrigo Albuquerque',
+  athlete
 }) => {
   const isEditing = Boolean(supplementToEdit);
 
@@ -260,6 +262,37 @@ export const SupplementModal: React.FC<SupplementModalProps> = ({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Athlete Identification Header Strip */}
+        {athlete && (
+          <div className="px-6 py-2.5 bg-slate-950/90 border-b border-white/10 flex items-center justify-between gap-3 text-xs shrink-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              {athlete.avatar ? (
+                <img
+                  src={athlete.avatar}
+                  alt={athlete.name}
+                  className="w-7 h-7 rounded-lg object-cover border border-purple-500/40 shrink-0"
+                />
+              ) : (
+                <div className="w-7 h-7 rounded-lg bg-purple-600/30 text-purple-300 flex items-center justify-center font-bold text-xs border border-purple-500/40 shrink-0">
+                  {athlete.name?.slice(0, 2).toUpperCase() || 'AT'}
+                </div>
+              )}
+              <div className="flex items-center gap-2 min-w-0 truncate">
+                <span className="text-white font-bold truncate">{athlete.name}</span>
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 shrink-0">
+                  #{athlete.id.toUpperCase()}
+                </span>
+                <span className="text-slate-400 text-[11px] hidden sm:inline truncate">
+                  • {athlete.category} • {athlete.goal || 'Performance'}
+                </span>
+              </div>
+            </div>
+            <div className="text-[10px] uppercase font-bold text-purple-400 shrink-0 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
+              Prescrição Magistral
+            </div>
+          </div>
+        )}
 
         {/* Scrollable Form Body */}
         <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-6 flex-1 custom-scrollbar">

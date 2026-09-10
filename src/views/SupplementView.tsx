@@ -27,13 +27,15 @@ import {
   Check
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { SupplementItem, SupplementFormulaTemplate, SupplementCategory } from '../types';
+import { SupplementItem, SupplementFormulaTemplate, SupplementCategory, AthleteProfile, PersistenceSyncState } from '../types';
 import { soundFx } from '../utils/audio';
 import { SupplementModal } from '../components/SupplementModal';
 import { FormulaTemplateModal } from '../components/FormulaTemplateModal';
 import { DeleteSupplementModal } from '../components/DeleteSupplementModal';
+import { AthletePrescriptionHeader } from '../components/AthletePrescriptionHeader';
 
 interface SupplementViewProps {
+  athlete?: AthleteProfile;
   supplements: SupplementItem[];
   onToggleSupplementTaken: (supplementId: string) => void;
   onSimulateAlarm: (title: string, message: string) => void;
@@ -47,9 +49,15 @@ interface SupplementViewProps {
   onDeleteFormulaTemplate?: (templateId: string) => void;
   athleteName?: string;
   prescriberName?: string;
+  syncState?: PersistenceSyncState;
+  lastConfirmedTime?: string | null;
+  errorMessage?: string | null;
+  onRetry?: () => void;
+  isLoading?: boolean;
 }
 
 export const SupplementView: React.FC<SupplementViewProps> = ({
+  athlete,
   supplements,
   onToggleSupplementTaken,
   onSimulateAlarm,
@@ -62,7 +70,12 @@ export const SupplementView: React.FC<SupplementViewProps> = ({
   onSaveFormulaTemplate,
   onDeleteFormulaTemplate,
   athleteName = 'Atleta',
-  prescriberName = 'Prescritor Técnico'
+  prescriberName = 'Prescritor Técnico',
+  syncState = 'salvo',
+  lastConfirmedTime = null,
+  errorMessage = null,
+  onRetry,
+  isLoading = false
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('todos');
   const [searchQuery, setSearchQuery] = useState('');
@@ -189,6 +202,44 @@ export const SupplementView: React.FC<SupplementViewProps> = ({
 
   return (
     <div className="space-y-6 pb-24">
+      {/* Athlete Prescription & Persistence State Machine Header */}
+      {athlete && (
+        <AthletePrescriptionHeader
+          athlete={athlete}
+          title="Prescrição Magistral & Suplementação"
+          subtitle="Protocolos manipulados, dosagens, horários de ingestão e sinergia de ativos."
+          syncState={syncState}
+          lastConfirmedTime={lastConfirmedTime}
+          errorMessage={errorMessage}
+          onRetry={onRetry}
+          isLoading={isLoading}
+        />
+      )}
+
+      {/* Empty state when no supplements exist */}
+      {supplements.length === 0 && !isLoading && (
+        <div className="p-8 rounded-3xl bg-slate-900/60 border border-white/10 text-center space-y-4">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-purple-400">
+            <Pill className="w-7 h-7" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-white">Sem protocolos cadastrados</h3>
+            <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+              O atleta {athlete?.name} não possui nenhum suplemento ou fórmula manipulada prescrita no momento.
+            </p>
+          </div>
+          {canManageSupplements && (
+            <button
+              disabled={isLoading}
+              onClick={handleOpenAddModal}
+              className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold text-xs inline-flex items-center gap-2 shadow-lg shadow-purple-950/50"
+            >
+              <Plus className="w-4 h-4" /> Prescrever Primeira Fórmula
+            </button>
+          )}
+        </div>
+      )}
+
       {/* ======================================================== */}
       {/* HERO BANNER (#4A148C Deep Royal Purple & Liquid Glass) */}
       {/* ======================================================== */}
@@ -581,6 +632,7 @@ export const SupplementView: React.FC<SupplementViewProps> = ({
             onSave={handleSaveSupplement}
             supplementToEdit={supplementToEdit}
             prescriberName={prescriberName}
+            athlete={athlete}
           />
         )}
       </AnimatePresence>

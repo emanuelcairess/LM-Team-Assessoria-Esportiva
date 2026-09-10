@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { AthleteProfile, AnthropometricData } from '../types';
 import { soundFx } from '../utils/audio';
+import { isEvaluationApproved, calculateBmi, calculateDelta, formatMeasurementValue } from '../services/athleteDataService';
 
 interface ProgressPdfReportModalProps {
   isOpen: boolean;
@@ -44,50 +45,42 @@ export const ProgressPdfReportModal: React.FC<ProgressPdfReportModalProps> = ({
   if (!isOpen) return null;
 
   const rawHistory = athlete.measurementsHistory || [];
-  
-  const defaultMeasurement: AnthropometricData = {
-    date: new Date().toISOString().split('T')[0],
-    weightKg: athlete.currentWeightKg || 70,
-    heightCm: athlete.heightCm || 175,
-    bodyFatPercentage: 12,
-    muscleMassKg: 35,
-    chestCm: 100,
-    shouldersCm: 115,
-    waistCm: 80,
-    abdomenCm: 82,
-    rightArmCm: 38,
-    leftArmCm: 38,
-    rightThighCm: 58,
-    leftThighCm: 58,
-    calvesCm: 38,
-    glutesCm: 98,
-    neckCm: 38,
-    notes: 'Avaliação física inicial'
-  };
-
-  const history: AnthropometricData[] = rawHistory.length > 0 ? rawHistory : [defaultMeasurement];
-  const initialData = history[0];
-  const latestData = history[history.length - 1];
+  const hasHistory = rawHistory.length > 0;
+  const history: AnthropometricData[] = rawHistory;
+  const initialData = history[0] || ({} as AnthropometricData);
+  const latestData = history[history.length - 1] || ({} as AnthropometricData);
 
   const displayedHistory = reportPeriod === 'first_last' && history.length > 2
     ? [initialData, latestData]
     : history;
 
-  // Key Deltas
-  const totalWeightDelta = Number((latestData.weightKg - initialData.weightKg).toFixed(1));
-  const totalFatDelta = Number((latestData.bodyFatPercentage - initialData.bodyFatPercentage).toFixed(1));
-  const totalMuscleDelta = Number((latestData.muscleMassKg - initialData.muscleMassKg).toFixed(1));
-  const totalWaistDelta = Number((latestData.waistCm - initialData.waistCm).toFixed(1));
-  const totalArmDelta = Number((latestData.rightArmCm - initialData.rightArmCm).toFixed(1));
-  const totalChestDelta = Number((latestData.chestCm - initialData.chestCm).toFixed(1));
+  // Key Deltas sem preencher medições ausentes com dados fictícios
+  const totalWeightDelta = (latestData.weightKg && initialData.weightKg)
+    ? Number((latestData.weightKg - initialData.weightKg).toFixed(1))
+    : null;
+  const totalFatDelta = (latestData.bodyFatPercentage !== undefined && initialData.bodyFatPercentage !== undefined)
+    ? Number((latestData.bodyFatPercentage - initialData.bodyFatPercentage).toFixed(1))
+    : null;
+  const totalMuscleDelta = (latestData.muscleMassKg && initialData.muscleMassKg)
+    ? Number((latestData.muscleMassKg - initialData.muscleMassKg).toFixed(1))
+    : null;
+  const totalWaistDelta = (latestData.waistCm && initialData.waistCm)
+    ? Number((latestData.waistCm - initialData.waistCm).toFixed(1))
+    : null;
+  const totalArmDelta = (latestData.rightArmCm && initialData.rightArmCm)
+    ? Number((latestData.rightArmCm - initialData.rightArmCm).toFixed(1))
+    : null;
+  const totalChestDelta = (latestData.chestCm && initialData.chestCm)
+    ? Number((latestData.chestCm - initialData.chestCm).toFixed(1))
+    : null;
 
-  // BMI calculations
-  const bmi = (latestData.weightKg / Math.pow(latestData.heightCm / 100, 2)).toFixed(1);
-  const bmiNumber = parseFloat(bmi);
-  let bmiClassification = 'Eutrofia / Densidade Atlética';
-  if (bmiNumber < 18.5) bmiClassification = 'Abaixo do peso';
-  else if (bmiNumber >= 25 && bmiNumber < 30) bmiClassification = 'Sobrepeso funcional (Hipertrofia)';
-  else if (bmiNumber >= 30) bmiClassification = 'Alto volume de massa magra muscular';
+  // BMI calculations sem inferir dados
+  const bmiCalc = calculateBmi(latestData.weightKg, latestData.heightCm);
+  const bmi = bmiCalc.bmi || 'Não informado';
+  const bmiClassification = bmiCalc.classification;
+
+  // Validação clínica: aprovação visual removida se não houver validação registrada
+  const isApproved = isEvaluationApproved(latestData);
 
   // Evolution photos collection (Fallback with clean fitness stock photos if not provided)
   const defaultPhotos = {
@@ -279,12 +272,30 @@ export const ProgressPdfReportModal: React.FC<ProgressPdfReportModalProps> = ({
                 </div>
 
                 <div className="flex flex-col items-end gap-1 shrink-0">
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 print:bg-emerald-100 print:text-emerald-800 print:border-emerald-300">
-                    <ShieldCheck className="w-3.5 h-3.5" /> Protocolo Aprovado
-                  </span>
-                  <span className="text-[10px] text-slate-400 print:text-slate-600">
-                    Período: {new Date(initialData.date).toLocaleDateString('pt-BR')} a {new Date(latestData.date).toLocaleDateString('pt-BR')}
-                  </span>
+                  {isApproved ? (
+                    <>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 print:bg-emerald-100 print:text-emerald-800 print:border-emerald-300">
+                        <ShieldCheck className="w-3.5 h-3.5" /> Protocolo Validado
+                      </span>
+                      <span className="text-[10px] text-emerald-400 print:text-emerald-700">
+                        Por {latestData.validatedBy?.name} em {new Date(latestData.validatedAt!).toLocaleDateString('pt-BR')}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-400 border border-slate-700 print:bg-slate-100 print:text-slate-600">
+                        Sem validação clínica
+                      </span>
+                      <span className="text-[10px] text-slate-500">
+                        Registro sem assinatura profissional
+                      </span>
+                    </>
+                  )}
+                  {hasHistory && initialData.date && latestData.date && (
+                    <span className="text-[10px] text-slate-400 print:text-slate-600 mt-0.5">
+                      Período: {new Date(initialData.date).toLocaleDateString('pt-BR')} a {new Date(latestData.date).toLocaleDateString('pt-BR')}
+                    </span>
+                  )}
                 </div>
               </div>
 
