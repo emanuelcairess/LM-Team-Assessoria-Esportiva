@@ -22,7 +22,8 @@ import {
   Sparkles,
   Copy,
   Check,
-  ExternalLink
+  ExternalLink,
+  MessageSquare
 } from 'lucide-react';
 import { AthleteProfile, PrescriberProfile } from '../types';
 import { soundFx } from '../utils/audio';
@@ -76,10 +77,13 @@ export const LoginView: React.FC<LoginViewProps> = ({
   // Status & Feedback
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [generatedResetLink, setGeneratedResetLink] = useState<string | null>(null);
-  const [hasCopiedLink, setHasCopiedLink] = useState<boolean>(false);
   const [isAuthenticating, setIsAuthenticating] = useState<boolean>(false);
   const [isHelpModalOpen, setIsHelpModalOpen] = useState<boolean>(false);
+
+  // Password Reset Options: 'direct_link' vs 'email'
+  const [resetSubMode, setResetSubMode] = useState<'direct_link' | 'email'>('direct_link');
+  const [directResetLink, setDirectResetLink] = useState<string | null>(null);
+  const [hasCopiedResetLink, setHasCopiedResetLink] = useState<boolean>(false);
 
   // Phone number mask: (99) 99999-9999
   const formatPhoneNumber = (value: string): string => {
@@ -181,24 +185,11 @@ export const LoginView: React.FC<LoginViewProps> = ({
   // ============================================================================
   // 3. PRESCRITOR: RECUPERAÇÃO DE SENHA OFICIAL
   // ============================================================================
-  const handleCopyResetLink = async () => {
-    if (!generatedResetLink) return;
-    try {
-      await navigator.clipboard.writeText(generatedResetLink);
-      setHasCopiedLink(true);
-      soundFx.playSuccess();
-      setTimeout(() => setHasCopiedLink(false), 3000);
-    } catch {
-      // ignore
-    }
-  };
-
   const handlePrescriberPasswordReset = async (e: React.FormEvent) => {
     e.preventDefault();
     soundFx.playClick();
     setErrorMessage(null);
     setSuccessMessage(null);
-    setGeneratedResetLink(null);
 
     const email = prescriberEmail.trim();
     if (!email || !email.includes('@')) {
@@ -210,18 +201,77 @@ export const LoginView: React.FC<LoginViewProps> = ({
     setIsAuthenticating(true);
     try {
       const res = await adminService.requestPasswordReset(email);
-      if (res.resetLink) {
-        setGeneratedResetLink(res.resetLink);
-      }
       soundFx.playSuccess();
       setSuccessMessage(
-        res.message || 'Se o e-mail estiver cadastrado no sistema, o link para redefinição foi enviado com sucesso.'
+        res.message || 'Se o e-mail estiver cadastrado no sistema, o link para redefinição foi enviado. Verifique a caixa de entrada e a pasta de Spam/Lixo Eletrônico.'
       );
     } catch (err) {
       soundFx.playSuccess();
-      setSuccessMessage('Solicitação de recuperação processada. Verifique sua caixa de entrada.');
+      setSuccessMessage('Solicitação de recuperação processada. Verifique sua caixa de entrada e pasta de Spam.');
     } finally {
       setIsAuthenticating(false);
+    }
+  };
+
+  const handleGenerateDirectLinkOnLogin = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    soundFx.playClick();
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setDirectResetLink(null);
+
+    const email = prescriberEmail.trim();
+    if (!email || !email.includes('@')) {
+      soundFx.playAlert();
+      setErrorMessage('Informe o e-mail cadastrado para gerar o link direto.');
+      return;
+    }
+
+    setIsAuthenticating(true);
+    try {
+      const isMaster = email.toLowerCase() === 'emanuelcairess@gmail.com';
+      if (isMaster) {
+        // Master recovery endpoint generates direct link and restores full admin access
+        const res = await adminService.resetMasterAdminAccess(email);
+        if (res.success && res.resetLink) {
+          setDirectResetLink(res.resetLink);
+          soundFx.playSuccess();
+          setSuccessMessage('Acesso restabelecido com sucesso! Link direto de redefinição gerado abaixo.');
+        } else {
+          soundFx.playAlert();
+          setErrorMessage(res.error || 'Falha ao restabelecer acesso do administrador.');
+        }
+      } else {
+        // Regular user: request reset and if link returned, display it
+        const res = await adminService.requestPasswordReset(email);
+        if (res.resetLink) {
+          setDirectResetLink(res.resetLink);
+          soundFx.playSuccess();
+          setSuccessMessage('Link direto gerado com sucesso!');
+        } else {
+          soundFx.playSuccess();
+          setSuccessMessage(
+            'Solicitação de recuperação processada. Verifique sua caixa de entrada e pasta de Spam. Se precisar do link direto instantâneo, solicite ao Coach Emanuel pelo WhatsApp da Assessoria.'
+          );
+        }
+      }
+    } catch (err) {
+      soundFx.playAlert();
+      setErrorMessage('Erro ao gerar link de redefinição.');
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
+
+  const handleCopyDirectResetLink = async () => {
+    if (!directResetLink) return;
+    try {
+      await navigator.clipboard.writeText(directResetLink);
+      setHasCopiedResetLink(true);
+      soundFx.playSuccess();
+      setTimeout(() => setHasCopiedResetLink(false), 3000);
+    } catch {
+      // Fallback
     }
   };
 
@@ -505,7 +555,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
                         soundFx.playClick();
                         setErrorMessage(null);
                         setSuccessMessage(null);
-                        setGeneratedResetLink(null);
                         setPrescriberAuthMode('forgot_password');
                       }}
                       className="text-[10px] text-violet-400 hover:text-violet-300 font-semibold transition"
@@ -562,9 +611,49 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 </button>
               </form>
             ) : (
-              <form onSubmit={handlePrescriberPasswordReset} className="space-y-4">
+              <div className="space-y-4">
+                {/* Toggle: Link Direto vs Enviar por E-mail */}
+                <div className="grid grid-cols-2 gap-1.5 p-1 rounded-2xl bg-white/5 border border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundFx.playClick();
+                      setResetSubMode('direct_link');
+                      setErrorMessage(null);
+                    }}
+                    className={`py-2 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                      resetSubMode === 'direct_link'
+                        ? 'bg-violet-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-violet-300" />
+                    <span>Gerar Link Direto</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundFx.playClick();
+                      setResetSubMode('email');
+                      setErrorMessage(null);
+                    }}
+                    className={`py-2 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                      resetSubMode === 'email'
+                        ? 'bg-violet-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <Mail className="w-3.5 h-3.5 text-violet-300" />
+                    <span>Enviar por E-mail</span>
+                  </button>
+                </div>
+
+                {/* Email Input */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-200">E-mail Profissional do Prescritor / Admin</label>
+                  <label className="text-xs font-bold text-slate-200">
+                    E-mail do Prescritor / Administrador
+                  </label>
                   <input
                     type="email"
                     value={prescriberEmail}
@@ -579,79 +668,127 @@ export const LoginView: React.FC<LoginViewProps> = ({
                   />
                 </div>
 
-                {/* Generated Direct Reset Link Box */}
-                {generatedResetLink && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="p-3.5 rounded-2xl bg-violet-950/60 border border-violet-500/40 space-y-2.5"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-violet-300 flex items-center gap-1.5">
-                        <KeyRound className="w-3.5 h-3.5 text-violet-400" />
-                        <span>Link Direto de Redefinição</span>
+                {/* If user is Master Admin */}
+                {prescriberEmail.toLowerCase().trim() === 'emanuelcairess@gmail.com' && (
+                  <div className="p-3 rounded-xl bg-violet-500/15 border border-violet-500/30 text-violet-200 text-xs space-y-1">
+                    <p className="font-bold flex items-center gap-1.5 text-violet-300">
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>Administrador Geral Detectado</span>
+                    </p>
+                    <p className="text-[11px] text-slate-300">
+                      Você pode gerar o link direto oficial ou restabelecer seu acesso master imediatamente sem depender de e-mail.
+                    </p>
+                  </div>
+                )}
+
+                {/* Direct Link Output if Generated */}
+                {directResetLink && (
+                  <div className="p-3.5 rounded-2xl bg-slate-950 border border-violet-500/50 space-y-2.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-violet-300 flex items-center gap-1">
+                        <KeyRound className="w-3.5 h-3.5" /> Link Direto Oficial
                       </span>
-                      <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono font-bold">
-                        Pronto
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono">
+                        Válido 24h
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-300 leading-tight">
-                      O link oficial de recuperação foi gerado. Caso haja atraso na entrega do e-mail, utilize as opções abaixo:
-                    </p>
-                    <div className="flex items-center gap-2 pt-1">
+
+                    <input
+                      type="text"
+                      readOnly
+                      value={directResetLink}
+                      className="w-full text-xs font-mono bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-slate-200 select-all"
+                    />
+
+                    <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={handleCopyResetLink}
-                        className="flex-1 py-2 px-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-md shadow-violet-950/50"
+                        onClick={handleCopyDirectResetLink}
+                        className="flex-1 py-2 px-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition flex items-center justify-center gap-1.5"
                       >
-                        {hasCopiedLink ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
-                        <span>{hasCopiedLink ? 'Copiado!' : 'Copiar Link'}</span>
+                        {hasCopiedResetLink ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{hasCopiedResetLink ? 'Copiado!' : 'Copiar Link'}</span>
                       </button>
+
                       <a
-                        href={generatedResetLink}
+                        href={directResetLink}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="py-2 px-3 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold transition flex items-center gap-1.5"
+                        className="py-2 px-3 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold transition flex items-center gap-1"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                         <span>Abrir</span>
                       </a>
                     </div>
-                  </motion.div>
+                  </div>
                 )}
 
-                <div className="flex items-center gap-2">
+                {/* Action Buttons */}
+                <div className="flex items-center gap-2 pt-1">
                   <button
                     type="button"
                     onClick={() => {
                       setErrorMessage(null);
                       setSuccessMessage(null);
-                      setGeneratedResetLink(null);
+                      setDirectResetLink(null);
                       setPrescriberAuthMode('login');
                     }}
                     className="px-4 py-3 rounded-2xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold transition"
                   >
                     Voltar
                   </button>
-                  <button
-                    type="submit"
-                    disabled={isAuthenticating || !prescriberEmail.trim()}
-                    className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-black text-xs shadow-xl shadow-violet-950/40 flex items-center justify-center gap-2 disabled:opacity-50 transition"
-                  >
-                    {isAuthenticating ? (
-                      <>
-                        <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        <span>Processando...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Send className="w-3.5 h-3.5" />
-                        <span>Enviar Link de Recuperação</span>
-                      </>
-                    )}
-                  </button>
+
+                  {resetSubMode === 'direct_link' ? (
+                    <button
+                      type="button"
+                      onClick={handleGenerateDirectLinkOnLogin}
+                      disabled={isAuthenticating || !prescriberEmail.trim()}
+                      className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-black text-xs shadow-xl shadow-violet-950/40 flex items-center justify-center gap-2 disabled:opacity-50 transition"
+                    >
+                      {isAuthenticating ? (
+                        <>
+                          <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          <span>Gerando Link...</span>
+                        </>
+                      ) : (
+                        <>
+                          <KeyRound className="w-3.5 h-3.5" />
+                          <span>Gerar Link Direto</span>
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handlePrescriberPasswordReset}
+                      disabled={isAuthenticating || !prescriberEmail.trim()}
+                      className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-xs shadow-xl shadow-indigo-950/40 flex items-center justify-center gap-2 disabled:opacity-50 transition"
+                    >
+                      {isAuthenticating ? (
+                        <>
+                          <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          <span>Enviando...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-3.5 h-3.5" />
+                          <span>Enviar por E-mail</span>
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
-              </form>
+
+                {resetSubMode === 'email' ? (
+                  <p className="text-[11px] text-slate-400 text-center leading-relaxed">
+                    O e-mail é enviado pelo serviço oficial do Firebase Auth (<span className="text-violet-300">@firebaseapp.com</span>). Caso não localize na caixa principal, consulte a pasta de <strong className="text-slate-300 font-semibold">Spam ou Lixo Eletrônico</strong>.
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-slate-400 text-center leading-relaxed">
+                    O link direto permite redefinir a senha de forma imediata sem depender do recebimento de e-mails.
+                  </p>
+                )}
+              </div>
             )}
           </div>
         )}

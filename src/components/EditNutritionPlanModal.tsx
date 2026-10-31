@@ -35,6 +35,7 @@ interface EditNutritionPlanModalProps {
   isOpen: boolean;
   onClose: () => void;
   nutritionPlan: NutritionPlan;
+  initialMealId?: string | null;
   onSave: (updatedPlan: NutritionPlan) => void;
   athleteWeightKg?: number;
   athlete?: AthleteProfile;
@@ -92,19 +93,52 @@ export const EditNutritionPlanModal: React.FC<EditNutritionPlanModalProps> = ({
   isOpen,
   onClose,
   nutritionPlan,
+  initialMealId = null,
   onSave,
   athleteWeightKg = 80,
   athlete
 }) => {
   const [activeTab, setActiveTab] = useState<'meals' | 'targets' | 'presets'>('meals');
 
+  const sanitizeMeals = (rawMeals?: Meal[]): Meal[] => {
+    if (!Array.isArray(rawMeals)) return [];
+    return rawMeals.map((m, idx) => ({
+      ...m,
+      id: m.id || `meal-${idx + 1}`,
+      number: typeof m.number === 'number' ? m.number : idx + 1,
+      name: m.name || `Refeição ${idx + 1}`,
+      timeSchedule: m.timeSchedule || '12:00',
+      targetProteinG: typeof m.targetProteinG === 'number' ? m.targetProteinG : 0,
+      targetCarbsG: typeof m.targetCarbsG === 'number' ? m.targetCarbsG : 0,
+      targetFatG: typeof m.targetFatG === 'number' ? m.targetFatG : 0,
+      targetCaloriesKcal: typeof m.targetCaloriesKcal === 'number' ? m.targetCaloriesKcal : 0,
+      isCompleted: Boolean(m.isCompleted),
+      notes: m.notes || '',
+      foods: Array.isArray(m.foods)
+        ? m.foods.map((f, fIdx) => ({
+            ...f,
+            id: f.id || `food-${idx}-${fIdx}-${Date.now()}`,
+            name: f.name || 'Alimento',
+            portion: f.portion || `${f.amountGrams || 100}g`,
+            amountGrams: typeof f.amountGrams === 'number' ? f.amountGrams : 100,
+            proteinG: typeof f.proteinG === 'number' ? f.proteinG : 0,
+            carbsG: typeof f.carbsG === 'number' ? f.carbsG : 0,
+            fatG: typeof f.fatG === 'number' ? f.fatG : 0,
+            caloriesKcal: typeof f.caloriesKcal === 'number' ? f.caloriesKcal : 0,
+            category: f.category || 'proteina',
+            isCompleted: Boolean(f.isCompleted)
+          }))
+        : []
+    }));
+  };
+
   // Form State
-  const [dailyCalories, setDailyCalories] = useState<number>(nutritionPlan.dailyTargetCalories || 2183);
-  const [dailyProtein, setDailyProtein] = useState<number>(nutritionPlan.dailyTargetProteinG || 152);
-  const [dailyCarbs, setDailyCarbs] = useState<number>(nutritionPlan.dailyTargetCarbsG || 259);
-  const [dailyFat, setDailyFat] = useState<number>(nutritionPlan.dailyTargetFatG || 60);
-  const [dailyWater, setDailyWater] = useState<number>(nutritionPlan.waterIntakeLiters || 4.0);
-  const [meals, setMeals] = useState<Meal[]>(() => JSON.parse(JSON.stringify(nutritionPlan.meals || [])));
+  const [dailyCalories, setDailyCalories] = useState<number>(() => nutritionPlan?.dailyTargetCalories ?? 2183);
+  const [dailyProtein, setDailyProtein] = useState<number>(() => nutritionPlan?.dailyTargetProteinG ?? 152);
+  const [dailyCarbs, setDailyCarbs] = useState<number>(() => nutritionPlan?.dailyTargetCarbsG ?? 259);
+  const [dailyFat, setDailyFat] = useState<number>(() => nutritionPlan?.dailyTargetFatG ?? 60);
+  const [dailyWater, setDailyWater] = useState<number>(() => nutritionPlan?.waterIntakeLiters ?? 4.0);
+  const [meals, setMeals] = useState<Meal[]>(() => sanitizeMeals(nutritionPlan?.meals));
 
   // Food Sub-Modal / Drawer State
   const [activeMealIdForFood, setActiveMealIdForFood] = useState<string | null>(null);
@@ -125,23 +159,34 @@ export const EditNutritionPlanModal: React.FC<EditNutritionPlanModalProps> = ({
   const [foodFormCalories, setFoodFormCalories] = useState<number>(0);
   const [foodFormCategory, setFoodFormCategory] = useState<FoodItem['category']>('proteina');
 
-  // Expanded meal accordion in modal
-  const [expandedMealId, setExpandedMealId] = useState<string | null>(meals[0]?.id || null);
+  // Feedback and validation banners
+  const [formError, setFormError] = useState<string | null>(null);
+  const [foodFormError, setFoodFormError] = useState<string | null>(null);
 
-  // Sync state when nutritionPlan prop changes
+  // Expanded meal accordion in modal
+  const [expandedMealId, setExpandedMealId] = useState<string | null>(() => {
+    if (initialMealId) return initialMealId;
+    const initialList = sanitizeMeals(nutritionPlan?.meals);
+    return initialList[0]?.id || null;
+  });
+
+  // Sync state when nutritionPlan prop or initialMealId changes
   useEffect(() => {
-    if (isOpen) {
-      setDailyCalories(nutritionPlan.dailyTargetCalories);
-      setDailyProtein(nutritionPlan.dailyTargetProteinG);
-      setDailyCarbs(nutritionPlan.dailyTargetCarbsG);
-      setDailyFat(nutritionPlan.dailyTargetFatG);
-      setDailyWater(nutritionPlan.waterIntakeLiters);
-      setMeals(JSON.parse(JSON.stringify(nutritionPlan.meals || [])));
-      if (nutritionPlan.meals.length > 0) {
-        setExpandedMealId(nutritionPlan.meals[0].id);
+    if (isOpen && nutritionPlan) {
+      setDailyCalories(nutritionPlan.dailyTargetCalories ?? 0);
+      setDailyProtein(nutritionPlan.dailyTargetProteinG ?? 0);
+      setDailyCarbs(nutritionPlan.dailyTargetCarbsG ?? 0);
+      setDailyFat(nutritionPlan.dailyTargetFatG ?? 0);
+      setDailyWater(nutritionPlan.waterIntakeLiters ?? 0);
+      const sanitized = sanitizeMeals(nutritionPlan.meals);
+      setMeals(sanitized);
+      if (initialMealId && sanitized.some((m) => m.id === initialMealId)) {
+        setExpandedMealId(initialMealId);
+      } else if (sanitized.length > 0) {
+        setExpandedMealId(sanitized[0].id);
       }
     }
-  }, [isOpen, nutritionPlan]);
+  }, [isOpen, nutritionPlan, initialMealId]);
 
   // Handle Escape key to close modal
   useEffect(() => {
@@ -158,19 +203,19 @@ export const EditNutritionPlanModal: React.FC<EditNutritionPlanModalProps> = ({
 
   // Calculate live sum of all foods in all meals
   const totalCalculatedKcal = meals.reduce(
-    (acc, m) => acc + m.foods.reduce((fAcc, f) => fAcc + (f.caloriesKcal || 0), 0),
+    (acc, m) => acc + (m.foods || []).reduce((fAcc, f) => fAcc + (f.caloriesKcal || 0), 0),
     0
   );
   const totalCalculatedP = meals.reduce(
-    (acc, m) => acc + m.foods.reduce((fAcc, f) => fAcc + (f.proteinG || 0), 0),
+    (acc, m) => acc + (m.foods || []).reduce((fAcc, f) => fAcc + (f.proteinG || 0), 0),
     0
   );
   const totalCalculatedC = meals.reduce(
-    (acc, m) => acc + m.foods.reduce((fAcc, f) => fAcc + (f.carbsG || 0), 0),
+    (acc, m) => acc + (m.foods || []).reduce((fAcc, f) => fAcc + (f.carbsG || 0), 0),
     0
   );
   const totalCalculatedG = meals.reduce(
-    (acc, m) => acc + m.foods.reduce((fAcc, f) => fAcc + (f.fatG || 0), 0),
+    (acc, m) => acc + (m.foods || []).reduce((fAcc, f) => fAcc + (f.fatG || 0), 0),
     0
   );
 
@@ -242,9 +287,10 @@ export const EditNutritionPlanModal: React.FC<EditNutritionPlanModalProps> = ({
   const handleDeleteMeal = (mealId: string) => {
     soundFx.playClick();
     if (meals.length <= 1) {
-      alert('O plano alimentar precisa ter pelo menos 1 refeição cadastrada.');
+      setFormError('O plano alimentar precisa ter pelo menos 1 refeição cadastrada.');
       return;
     }
+    setFormError(null);
     const filtered = meals
       .filter((m) => m.id !== mealId)
       .map((m, idx) => ({ ...m, number: idx + 1 }));
@@ -266,12 +312,13 @@ export const EditNutritionPlanModal: React.FC<EditNutritionPlanModalProps> = ({
 
   const handleDuplicateMeal = (meal: Meal) => {
     soundFx.playClick();
+    const currentFoods = meal.foods || [];
     const duplicate: Meal = {
       ...meal,
       id: `meal-${Date.now()}`,
       number: meals.length + 1,
       name: `${meal.name} (Cópia)`,
-      foods: meal.foods.map((f) => ({ ...f, id: `food-${Date.now()}-${Math.random().toString(36).substring(2, 6)}` }))
+      foods: currentFoods.map((f) => ({ ...f, id: `food-${Date.now()}-${Math.random().toString(36).substring(2, 6)}` }))
     };
     setMeals([...meals, duplicate]);
     setExpandedMealId(duplicate.id);
@@ -362,9 +409,10 @@ export const EditNutritionPlanModal: React.FC<EditNutritionPlanModalProps> = ({
   const handleSaveFoodItem = () => {
     if (!activeMealIdForFood) return;
     if (!foodFormName.trim()) {
-      alert('Por favor, informe o nome do alimento.');
+      setFoodFormError('Por favor, informe o nome do alimento antes de salvar.');
       return;
     }
+    setFoodFormError(null);
 
     soundFx.playClick();
     const newFood: FoodItem = {
@@ -384,17 +432,18 @@ export const EditNutritionPlanModal: React.FC<EditNutritionPlanModalProps> = ({
       prev.map((meal) => {
         if (meal.id !== activeMealIdForFood) return meal;
         let updatedFoods: FoodItem[];
+        const currentFoods = meal.foods || [];
         if (foodModalMode === 'edit') {
-          updatedFoods = meal.foods.map((f) => (f.id === newFood.id ? newFood : f));
+          updatedFoods = currentFoods.map((f) => (f.id === newFood.id ? newFood : f));
         } else {
-          updatedFoods = [...meal.foods, newFood];
+          updatedFoods = [...currentFoods, newFood];
         }
 
         // Auto-recalculate target macros for this meal from its food list
-        const mealKcal = Math.round(updatedFoods.reduce((acc, f) => acc + f.caloriesKcal, 0));
-        const mealP = Math.round(updatedFoods.reduce((acc, f) => acc + f.proteinG, 0) * 10) / 10;
-        const mealC = Math.round(updatedFoods.reduce((acc, f) => acc + f.carbsG, 0) * 10) / 10;
-        const mealG = Math.round(updatedFoods.reduce((acc, f) => acc + f.fatG, 0) * 10) / 10;
+        const mealKcal = Math.round(updatedFoods.reduce((acc, f) => acc + (f.caloriesKcal || 0), 0));
+        const mealP = Math.round(updatedFoods.reduce((acc, f) => acc + (f.proteinG || 0), 0) * 10) / 10;
+        const mealC = Math.round(updatedFoods.reduce((acc, f) => acc + (f.carbsG || 0), 0) * 10) / 10;
+        const mealG = Math.round(updatedFoods.reduce((acc, f) => acc + (f.fatG || 0), 0) * 10) / 10;
 
         return {
           ...meal,
@@ -416,11 +465,12 @@ export const EditNutritionPlanModal: React.FC<EditNutritionPlanModalProps> = ({
     setMeals((prev) =>
       prev.map((meal) => {
         if (meal.id !== mealId) return meal;
-        const updatedFoods = meal.foods.filter((f) => f.id !== foodId);
-        const mealKcal = Math.round(updatedFoods.reduce((acc, f) => acc + f.caloriesKcal, 0));
-        const mealP = Math.round(updatedFoods.reduce((acc, f) => acc + f.proteinG, 0) * 10) / 10;
-        const mealC = Math.round(updatedFoods.reduce((acc, f) => acc + f.carbsG, 0) * 10) / 10;
-        const mealG = Math.round(updatedFoods.reduce((acc, f) => acc + f.fatG, 0) * 10) / 10;
+        const currentFoods = meal.foods || [];
+        const updatedFoods = currentFoods.filter((f) => f.id !== foodId);
+        const mealKcal = Math.round(updatedFoods.reduce((acc, f) => acc + (f.caloriesKcal || 0), 0));
+        const mealP = Math.round(updatedFoods.reduce((acc, f) => acc + (f.proteinG || 0), 0) * 10) / 10;
+        const mealC = Math.round(updatedFoods.reduce((acc, f) => acc + (f.carbsG || 0), 0) * 10) / 10;
+        const mealG = Math.round(updatedFoods.reduce((acc, f) => acc + (f.fatG || 0), 0) * 10) / 10;
 
         return {
           ...meal,
@@ -438,9 +488,10 @@ export const EditNutritionPlanModal: React.FC<EditNutritionPlanModalProps> = ({
   const handleSaveAll = () => {
     soundFx.playClick();
     if (meals.length === 0) {
-      alert('O plano alimentar precisa de pelo menos 1 refeição.');
+      setFormError('O plano alimentar precisa de pelo menos 1 refeição cadastrada.');
       return;
     }
+    setFormError(null);
 
     const updatedPlan: NutritionPlan = {
       dailyTargetCalories: Number(dailyCalories) || 2000,
@@ -577,7 +628,7 @@ export const EditNutritionPlanModal: React.FC<EditNutritionPlanModalProps> = ({
                   : 'bg-amber-500/20 text-amber-300'
               }`}
             >
-              {Math.round(totalCalculatedKcal)} kcal ({meals.reduce((a, m) => a + m.foods.length, 0)} itens)
+              {Math.round(totalCalculatedKcal)} kcal ({meals.reduce((a, m) => a + (m.foods?.length || 0), 0)} itens)
             </span>
             <button
               onClick={handleAutoSumFromMeals}
@@ -640,6 +691,29 @@ export const EditNutritionPlanModal: React.FC<EditNutritionPlanModalProps> = ({
 
         {/* Modal Scrollable Body */}
         <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
+          {/* Validation Alert Banner */}
+          <AnimatePresence>
+            {formError && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="p-3.5 rounded-2xl bg-rose-950/40 border border-rose-500/40 text-rose-200 text-xs flex items-center justify-between gap-3 shadow-lg"
+              >
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>{formError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFormError(null)}
+                  className="p-1 rounded-lg hover:bg-white/10 text-rose-300"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
           {/* ======================================================== */}
           {/* TAB 1: MEALS & FOODS ACCORDION */}
           {/* ======================================================== */}
@@ -663,10 +737,11 @@ export const EditNutritionPlanModal: React.FC<EditNutritionPlanModalProps> = ({
 
               {meals.map((meal, index) => {
                 const isExpanded = expandedMealId === meal.id;
-                const mealKcal = Math.round(meal.foods.reduce((acc, f) => acc + (f.caloriesKcal || 0), 0));
-                const mealP = Math.round(meal.foods.reduce((acc, f) => acc + (f.proteinG || 0), 0) * 10) / 10;
-                const mealC = Math.round(meal.foods.reduce((acc, f) => acc + (f.carbsG || 0), 0) * 10) / 10;
-                const mealG = Math.round(meal.foods.reduce((acc, f) => acc + (f.fatG || 0), 0) * 10) / 10;
+                const mealFoods = meal.foods || [];
+                const mealKcal = Math.round(mealFoods.reduce((acc, f) => acc + (f.caloriesKcal || 0), 0));
+                const mealP = Math.round(mealFoods.reduce((acc, f) => acc + (f.proteinG || 0), 0) * 10) / 10;
+                const mealC = Math.round(mealFoods.reduce((acc, f) => acc + (f.carbsG || 0), 0) * 10) / 10;
+                const mealG = Math.round(mealFoods.reduce((acc, f) => acc + (f.fatG || 0), 0) * 10) / 10;
 
                 return (
                   <div
@@ -803,7 +878,7 @@ export const EditNutritionPlanModal: React.FC<EditNutritionPlanModalProps> = ({
                           <div className="space-y-2">
                             <div className="flex items-center justify-between">
                               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                                Alimentos Inseridos ({meal.foods.length})
+                                Alimentos Inseridos ({mealFoods.length})
                               </span>
                               <button
                                 type="button"
@@ -815,7 +890,7 @@ export const EditNutritionPlanModal: React.FC<EditNutritionPlanModalProps> = ({
                               </button>
                             </div>
 
-                            {meal.foods.length === 0 ? (
+                            {mealFoods.length === 0 ? (
                               <div className="p-6 rounded-2xl border border-dashed border-white/10 text-center text-xs text-slate-400 space-y-2">
                                 <p>Nenhum alimento cadastrado nesta refeição.</p>
                                 <button
@@ -827,7 +902,7 @@ export const EditNutritionPlanModal: React.FC<EditNutritionPlanModalProps> = ({
                                 </button>
                               </div>
                             ) : (
-                              meal.foods.map((food) => (
+                              mealFoods.map((food) => (
                                 <div
                                   key={food.id}
                                   className="p-3 rounded-2xl bg-white/5 border border-white/5 hover:border-white/15 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition"
@@ -1182,6 +1257,30 @@ export const EditNutritionPlanModal: React.FC<EditNutritionPlanModalProps> = ({
 
               {/* Sub-modal Scrollable Area */}
               <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-5">
+                {/* Food Validation Alert Banner */}
+                <AnimatePresence>
+                  {foodFormError && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      className="p-3 rounded-2xl bg-rose-950/40 border border-rose-500/40 text-rose-200 text-xs flex items-center justify-between gap-3 shadow-lg"
+                    >
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                        <span>{foodFormError}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFoodFormError(null)}
+                        className="p-1 rounded-lg hover:bg-white/10 text-rose-300"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
                 {/* Search / Select Quick Food from Database */}
                 <div className="space-y-3">
                   <label className="text-[10px] uppercase font-bold text-slate-400">

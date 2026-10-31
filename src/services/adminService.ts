@@ -342,6 +342,41 @@ class AdminService {
   }
 
   /**
+   * Administrative Operation: Generate Official Password Reset Link for Managed User
+   * Requires Authenticated Admin or Coach session.
+   */
+  public async generateUserResetLink(email: string): Promise<{
+    success: boolean;
+    resetLink?: string;
+    message?: string;
+    error?: string;
+  }> {
+    const token = await this.getIdToken();
+    if (!token) {
+      return { success: false, error: 'Sessão expirada. Autentique-se como Administrador ou Treinador.' };
+    }
+
+    try {
+      const response = await fetch('/api/admin/generate-user-reset-link', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ email: email.toLowerCase().trim() })
+      });
+      const result = await response.json();
+      if (response.ok && result.success) {
+        return { success: true, resetLink: result.resetLink, message: result.message };
+      }
+      return { success: false, error: result.message || result.error || 'Falha ao gerar link de redefinição.' };
+    } catch (err: any) {
+      console.error('Error in generateUserResetLink:', err);
+      return { success: false, error: 'Erro de comunicação ao gerar link de redefinição.' };
+    }
+  }
+
+  /**
    * Reset and Provision Master Admin Access
    */
   public async resetMasterAdminAccess(email?: string): Promise<{
@@ -370,6 +405,55 @@ class AdminService {
     } catch (err: any) {
       console.error('Error calling /api/admin/reset-admin-access:', err);
       return { success: false, error: err.message || 'Falha de comunicação com o servidor.' };
+    }
+  }
+
+  /**
+   * Verify Direct Password Reset Token
+   */
+  public async verifyResetToken(token: string, email: string): Promise<{
+    valid: boolean;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch('/api/auth/verify-reset-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, email: email.toLowerCase().trim() })
+      });
+      const data = await response.json();
+      return { valid: Boolean(data.valid), error: data.error };
+    } catch (err: any) {
+      return { valid: false, error: err.message || 'Erro ao validar link de redefinição.' };
+    }
+  }
+
+  /**
+   * Complete Password Reset using Direct Token
+   */
+  public async resetPasswordWithToken(token: string, email: string, newPassword: string): Promise<{
+    success: boolean;
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch('/api/auth/reset-password-with-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          email: email.toLowerCase().trim(),
+          newPassword
+        })
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        return { success: true, message: data.message };
+      }
+      return { success: false, error: data.message || data.error || 'Falha ao redefinir senha.' };
+    } catch (err: any) {
+      console.error('Error calling /api/auth/reset-password-with-token:', err);
+      return { success: false, error: 'Erro de comunicação ao redefinir senha.' };
     }
   }
 

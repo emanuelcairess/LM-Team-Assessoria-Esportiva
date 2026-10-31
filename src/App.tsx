@@ -69,6 +69,7 @@ const RoomSchemaModal = React.lazy(() => import('./components/RoomSchemaModal').
 const InstallAppModal = React.lazy(() => import('./components/InstallAppModal').then((m) => ({ default: m.InstallAppModal })));
 const BrandAssetsModal = React.lazy(() => import('./components/BrandAssetsModal').then((m) => ({ default: m.BrandAssetsModal })));
 const ChangePasswordModal = React.lazy(() => import('./components/ChangePasswordModal').then((m) => ({ default: m.ChangePasswordModal })));
+const DirectPasswordResetModal = React.lazy(() => import('./components/DirectPasswordResetModal').then((m) => ({ default: m.DirectPasswordResetModal })));
 
 import { auth, signOut, onAuthStateChanged, User as FirebaseUser } from './lib/firebase';
 
@@ -220,6 +221,22 @@ export default function App() {
     return () => {
       isMounted = false;
     };
+  }, []);
+
+  // Direct Password Reset Token from Link parameters
+  const [directResetParams, setDirectResetParams] = useState<{ token: string; email: string } | null>(null);
+
+  useEffect(() => {
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      const action = searchParams.get('action') || searchParams.get('mode');
+      const token = searchParams.get('token');
+      const email = searchParams.get('email');
+
+      if ((action === 'resetPassword' || action === 'reset_password') && token && email) {
+        setDirectResetParams({ token, email });
+      }
+    } catch {}
   }, []);
 
   // Pre-defined Formula Templates Library
@@ -1620,22 +1637,64 @@ export default function App() {
                 )
               );
             } else {
-              setCurrentAthlete((prev) => ({
-                ...prev,
-                password: newPassword,
-                accessPassword: newPassword,
-                requiresPasswordChange: false
-              }));
+              setCurrentAthlete((prev) => {
+                const updated = {
+                  ...prev,
+                  requiresPasswordChange: false,
+                  passwordChangedAt: new Date().toISOString()
+                };
+                delete (updated as any).password;
+                delete (updated as any).accessPassword;
+                return updated;
+              });
               setAthletesList((prevList) =>
-                prevList.map((a) =>
-                  a.id === currentAthlete.id
-                    ? { ...a, password: newPassword, accessPassword: newPassword, requiresPasswordChange: false }
-                    : a
-                )
+                prevList.map((a) => {
+                  if (a.id === currentAthlete.id) {
+                    const updated = {
+                      ...a,
+                      requiresPasswordChange: false,
+                      passwordChangedAt: new Date().toISOString()
+                    };
+                    delete (updated as any).password;
+                    delete (updated as any).accessPassword;
+                    return updated;
+                  }
+                  return a;
+                })
               );
             }
           }}
         />
+
+        {/* Direct Password Reset Modal from Link */}
+        {directResetParams && (
+          <DirectPasswordResetModal
+            token={directResetParams.token}
+            email={directResetParams.email}
+            onSuccess={() => {
+              setDirectResetParams(null);
+              const url = new URL(window.location.href);
+              url.searchParams.delete('action');
+              url.searchParams.delete('mode');
+              url.searchParams.delete('token');
+              url.searchParams.delete('email');
+              window.history.replaceState({}, document.title, url.pathname);
+              showToast(
+                'Senha Alterada com Sucesso!',
+                'Sua nova senha de acesso foi salva. Faça login para acessar seu perfil.'
+              );
+            }}
+            onClose={() => {
+              setDirectResetParams(null);
+              const url = new URL(window.location.href);
+              url.searchParams.delete('action');
+              url.searchParams.delete('mode');
+              url.searchParams.delete('token');
+              url.searchParams.delete('email');
+              window.history.replaceState({}, document.title, url.pathname);
+            }}
+          />
+        )}
       </React.Suspense>
 
       {/* Startup & Transitions Splash Screen (One UI 9.0) */}

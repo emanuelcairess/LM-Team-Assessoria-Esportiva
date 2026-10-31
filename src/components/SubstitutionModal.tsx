@@ -20,6 +20,7 @@ export const SubstitutionModal: React.FC<SubstitutionModalProps> = ({
   onApplySubstitution
 }) => {
   const [selectedOptionIndex, setSelectedOptionIndex] = useState<number>(0);
+  const { modalRef } = useAccessibleModal({ isOpen: isOpen && Boolean(selectedFood), onClose });
 
   if (!isOpen || !selectedFood) return null;
 
@@ -165,8 +166,6 @@ export const SubstitutionModal: React.FC<SubstitutionModalProps> = ({
     }
     onClose();
   };
-
-  const { modalRef } = useAccessibleModal({ isOpen, onClose });
 
   return (
     <AnimatePresence>

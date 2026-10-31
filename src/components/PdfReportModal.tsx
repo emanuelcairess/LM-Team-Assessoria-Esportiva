@@ -23,6 +23,8 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
   athlete,
   currentData
 }) => {
+  const { modalRef } = useAccessibleModal({ isOpen, onClose });
+
   if (!isOpen) return null;
 
   const history = athlete.measurementsHistory || [];
@@ -62,8 +64,6 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
     soundFx.playClick();
     window.print();
   };
-
-  const { modalRef } = useAccessibleModal({ isOpen, onClose });
 
   return (
     <AnimatePresence>

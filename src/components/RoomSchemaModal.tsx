@@ -60,6 +60,8 @@ export const RoomSchemaModal: React.FC<RoomSchemaModalProps> = ({
   const [activeViewTab, setActiveViewTab] = useState<'entities' | 'architecture' | 'queue'>('entities');
   const [cloudProvider, setCloudProvider] = useState<'Supabase' | 'Firestore'>('Supabase');
 
+  const { modalRef } = useAccessibleModal({ isOpen, onClose });
+
   if (!isOpen) return null;
 
   const currentEntity = ROOM_ENTITIES_DATA.find((e) => e.id === selectedEntityId) || ROOM_ENTITIES_DATA[0];
@@ -90,8 +92,6 @@ export const RoomSchemaModal: React.FC<RoomSchemaModalProps> = ({
     setCopiedText(true);
     setTimeout(() => setCopiedText(false), 2000);
   };
-
-  const { modalRef } = useAccessibleModal({ isOpen, onClose });
 
   return (
     <div

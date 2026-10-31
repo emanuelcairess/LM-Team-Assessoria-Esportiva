@@ -418,6 +418,25 @@ export const CoachView: React.FC<CoachViewProps> = ({
                 </button>
               )}
 
+              {/* Gerador de Link Direto de Senha (WhatsApp & E-mail) */}
+              <button
+                onClick={() => {
+                  soundFx.playClick();
+                  setResetPasswordTarget({
+                    id: '',
+                    name: 'Gerador Geral de Link',
+                    email: '',
+                    roleLabel: 'Atleta ou Profissional',
+                    type: 'athlete'
+                  });
+                }}
+                className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white text-xs font-black shadow-xl shadow-violet-950/60 transition flex items-center gap-1.5 border border-violet-400/30"
+                title="Gerador de Link Direto de Redefinição de Senha para Envio via WhatsApp"
+              >
+                <KeyRound className="w-3.5 h-3.5 text-violet-200" />
+                <span>Gerador de Link Direto</span>
+              </button>
+
               {isCurrentUserAdmin && (
                 <button
                   onClick={() => {
@@ -802,11 +821,11 @@ export const CoachView: React.FC<CoachViewProps> = ({
                                       isMaster: p.isMaster
                                     });
                                   }}
-                                  className="px-2 py-0.5 rounded-md bg-violet-500/20 hover:bg-violet-500/30 text-violet-200 text-[10px] font-bold flex items-center gap-1 transition border border-violet-500/30"
-                                  title="Redefinir senha de acesso deste prescritor"
+                                  className="px-2.5 py-1 rounded-lg bg-violet-600/25 hover:bg-violet-600/40 text-violet-200 text-[10px] font-bold flex items-center gap-1.5 transition border border-violet-500/30 shadow-sm"
+                                  title="Gerar link direto ou redefinir senha deste prescritor"
                                 >
-                                  <KeyRound className="w-2.5 h-2.5 text-violet-300" />
-                                  <span>Resetar</span>
+                                  <KeyRound className="w-3 h-3 text-violet-300" />
+                                  <span>Gerar Link Direto</span>
                                 </button>
                               )}
                         </div>
@@ -974,6 +993,43 @@ export const CoachView: React.FC<CoachViewProps> = ({
             </div>
           </div>
 
+          {/* Quick Access / Password Recovery Banner */}
+          <div className="p-4 rounded-3xl bg-gradient-to-r from-violet-950/40 via-indigo-950/40 to-slate-900/60 border border-violet-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-violet-600/30 border border-violet-500/40 text-violet-300 flex items-center justify-center shrink-0">
+                <KeyRound className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-black text-white flex items-center gap-2">
+                  <span>Gerador de Link Direto de Redefinição</span>
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-violet-500/30 text-violet-200 border border-violet-500/40">
+                    WhatsApp & Copiar
+                  </span>
+                </h4>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Precisa enviar link de redefinição para um atleta sem depender de e-mail? Gere o link direto instantaneamente e envie pelo WhatsApp.
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                soundFx.playClick();
+                setResetPasswordTarget({
+                  id: '',
+                  name: 'Gerador Geral de Link',
+                  email: '',
+                  roleLabel: 'Atleta',
+                  type: 'athlete'
+                });
+              }}
+              className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white text-xs font-black shadow-lg shadow-violet-950/50 transition flex items-center justify-center gap-1.5 shrink-0 border border-violet-400/30"
+            >
+              <KeyRound className="w-4 h-4" />
+              <span>Abrir Gerador de Link</span>
+            </button>
+          </div>
+
           {/* Athletes Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredAthletes.map((ath) => {
@@ -1082,11 +1138,11 @@ export const CoachView: React.FC<CoachViewProps> = ({
                                 type: 'athlete'
                               });
                             }}
-                            className="px-2 py-0.5 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[10px] font-bold flex items-center gap-1 transition border border-amber-500/30"
-                            title="Redefinir senha de acesso do aluno"
+                            className="px-2.5 py-1 rounded-lg bg-violet-600/25 hover:bg-violet-600/40 text-violet-200 text-[10px] font-bold flex items-center gap-1.5 transition border border-violet-500/30 shadow-sm"
+                            title="Gerar link direto ou redefinir senha de acesso do aluno"
                           >
-                            <KeyRound className="w-2.5 h-2.5" />
-                            <span>Resetar</span>
+                            <KeyRound className="w-3 h-3 text-violet-300" />
+                            <span>Gerar Link Direto</span>
                           </button>
                         </div>
                       </div>
@@ -1281,7 +1337,7 @@ export const CoachView: React.FC<CoachViewProps> = ({
                 Meta de <strong>{nutritionPlan.dailyTargetCalories} kcal</strong> e <strong>{nutritionPlan.dailyTargetProteinG}g de proteína</strong>.
               </p>
               <div className="space-y-1.5 text-xs text-slate-200">
-                {nutritionPlan.meals.map((m) => (
+                {(nutritionPlan?.meals || []).map((m) => (
                   <div key={m.id} className="p-2 rounded-xl bg-white/5 flex justify-between">
                     <span className="font-bold">R{m.number} ({m.timeSchedule})</span>
                     <span className="text-emerald-400 font-bold">{m.targetCaloriesKcal} kcal</span>
@@ -1429,6 +1485,8 @@ export const CoachView: React.FC<CoachViewProps> = ({
             isOpen={Boolean(resetPasswordTarget)}
             targetUser={resetPasswordTarget}
             currentUser={currentPrescriber}
+            athletesList={athletesList}
+            prescribersList={prescribersList}
             onClose={() => setResetPasswordTarget(null)}
             onConfirmReset={(newPassword, requiresChange) => {
               if (onResetPassword && resetPasswordTarget) {
@@ -1439,7 +1497,6 @@ export const CoachView: React.FC<CoachViewProps> = ({
                   resetPasswordTarget.type
                 );
               }
-              setResetPasswordTarget(null);
             }}
           />
         )}

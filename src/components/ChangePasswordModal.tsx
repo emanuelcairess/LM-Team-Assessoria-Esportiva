@@ -47,6 +47,18 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  const handleClose = () => {
+    soundFx.playClick();
+    setNewPassword('');
+    setConfirmPassword('');
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setIsLoading(false);
+    onClose();
+  };
+
+  const { modalRef } = useAccessibleModal({ isOpen, onClose: handleClose });
+
   if (!isOpen) return null;
 
   // Password strength calculation
@@ -79,16 +91,6 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
     setShowNewPassword(true);
     setShowConfirmPassword(true);
     setErrorMessage(null);
-  };
-
-  const handleClose = () => {
-    soundFx.playClick();
-    setNewPassword('');
-    setConfirmPassword('');
-    setErrorMessage(null);
-    setSuccessMessage(null);
-    setIsLoading(false);
-    onClose();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -147,8 +149,6 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
       setIsLoading(false);
     }
   };
-
-  const { modalRef } = useAccessibleModal({ isOpen, onClose: handleClose });
 
   return (
     <AnimatePresence>

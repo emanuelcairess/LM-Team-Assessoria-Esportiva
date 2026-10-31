@@ -185,5 +185,44 @@ describe('Rotas HTTP de Autenticação e Sessão - LM Team API', () => {
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('INVALID_EMAIL');
     });
+
+    it('NUNCA deve vazar resetLink em requisição pública de redefinição de senha', async () => {
+      const res = await request(app)
+        .post('/api/auth/request-password-reset')
+        .send({ email: 'usuario@teste.com' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.resetLink).toBeUndefined();
+    });
+  });
+
+  describe('Bloqueio de Privilégios e Rotas Administrativas Sensíveis', () => {
+    it('POST /api/admin/reset-admin-access deve rejeitar e-mail arbitrário com 403 FORBIDDEN', async () => {
+      const res = await request(app)
+        .post('/api/admin/reset-admin-access')
+        .send({ email: 'hacker@evil.com' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('FORBIDDEN');
+    });
+
+    it('POST /api/admin/set-admin-dev-password sem autenticação deve retornar 401 UNAUTHENTICATED', async () => {
+      const res = await request(app)
+        .post('/api/admin/set-admin-dev-password')
+        .send({ email: 'emanuelcairess@gmail.com', password: 'newPassword123' });
+
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe('UNAUTHENTICATED');
+    });
+
+    it('POST /api/admin/generate-user-reset-link sem autenticação deve retornar 401 UNAUTHENTICATED', async () => {
+      const res = await request(app)
+        .post('/api/admin/generate-user-reset-link')
+        .send({ email: 'atleta@teste.com' });
+
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe('UNAUTHENTICATED');
+    });
   });
 });

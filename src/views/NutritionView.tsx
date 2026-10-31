@@ -54,19 +54,21 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
   onRetry,
   isLoading = false
 }) => {
+  const safeMeals: Meal[] = Array.isArray(nutritionPlan?.meals) ? nutritionPlan.meals : [];
   const [expandedMealId, setExpandedMealId] = useState<string | null>(
-    nutritionPlan.meals[0]?.id || 'meal-1'
+    safeMeals[0]?.id || 'meal-1'
   );
   const [waterDrunkMl, setWaterDrunkMl] = useState<number>(3200);
 
   // Edit Nutrition Plan Modal State
   const [isEditPlanModalOpen, setIsEditPlanModalOpen] = useState<boolean>(false);
+  const [selectedMealIdForEdit, setSelectedMealIdForEdit] = useState<string | null>(null);
 
   // Quick Inline Meal Delete state
   const [mealToDeleteId, setMealToDeleteId] = useState<string | null>(null);
 
   // Compute live consumption
-  const completedMeals = nutritionPlan.meals.filter((m) => m.isCompleted);
+  const completedMeals = safeMeals.filter((m) => m.isCompleted);
   const totalCaloriesDone = completedMeals.reduce((acc, m) => acc + (m.targetCaloriesKcal || 0), 0);
   const totalProteinDone = Math.round(completedMeals.reduce((acc, m) => acc + (m.targetProteinG || 0), 0) * 10) / 10;
   const totalCarbsDone = Math.round(completedMeals.reduce((acc, m) => acc + (m.targetCarbsG || 0), 0) * 10) / 10;
@@ -74,7 +76,7 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
 
   const calPercent = Math.min(
     100,
-    Math.round((totalCaloriesDone / (nutritionPlan.dailyTargetCalories || 2000)) * 100)
+    Math.round((totalCaloriesDone / (nutritionPlan?.dailyTargetCalories || 2000)) * 100)
   );
 
   const handleMealToggle = (meal: Meal) => {
@@ -104,7 +106,7 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
   const handleQuickAddMeal = () => {
     if (!onUpdateNutritionPlan) return;
     soundFx.playClick();
-    const nextNum = nutritionPlan.meals.length + 1;
+    const nextNum = safeMeals.length + 1;
     const newMeal: Meal = {
       id: `meal-${Date.now()}`,
       number: nextNum,
@@ -119,7 +121,7 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
       foods: []
     };
 
-    const updatedMeals = [...nutritionPlan.meals, newMeal];
+    const updatedMeals = [...safeMeals, newMeal];
     const updatedPlan: NutritionPlan = {
       ...nutritionPlan,
       meals: updatedMeals
@@ -132,12 +134,11 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
   const handleConfirmDeleteMeal = (mealId: string) => {
     if (!onUpdateNutritionPlan) return;
     soundFx.playClick();
-    if (nutritionPlan.meals.length <= 1) {
-      alert('O plano alimentar precisa ter pelo menos 1 refeição cadastrada.');
+    if (safeMeals.length <= 1) {
       setMealToDeleteId(null);
       return;
     }
-    const updatedMeals = nutritionPlan.meals
+    const updatedMeals = safeMeals
       .filter((m) => m.id !== mealId)
       .map((m, idx) => ({ ...m, number: idx + 1 }));
 
@@ -153,9 +154,10 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
   const handleQuickDeleteFood = (mealId: string, foodId: string) => {
     if (!onUpdateNutritionPlan) return;
     soundFx.playClick();
-    const updatedMeals = nutritionPlan.meals.map((meal) => {
+    const updatedMeals = safeMeals.map((meal) => {
       if (meal.id !== mealId) return meal;
-      const updatedFoods = meal.foods.filter((f) => f.id !== foodId);
+      const currentFoods = meal.foods || [];
+      const updatedFoods = currentFoods.filter((f) => f.id !== foodId);
       const mealKcal = Math.round(updatedFoods.reduce((acc, f) => acc + (f.caloriesKcal || 0), 0));
       const mealP = Math.round(updatedFoods.reduce((acc, f) => acc + (f.proteinG || 0), 0) * 10) / 10;
       const mealC = Math.round(updatedFoods.reduce((acc, f) => acc + (f.carbsG || 0), 0) * 10) / 10;
@@ -193,7 +195,7 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
       )}
 
       {/* Empty State Banner if no meals exist */}
-      {nutritionPlan.meals.length === 0 && !isLoading && (
+      {safeMeals.length === 0 && !isLoading && (
         <div className="p-8 rounded-3xl bg-slate-900/60 border border-white/10 text-center space-y-4">
           <div className="w-14 h-14 mx-auto rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-400">
             <Utensils className="w-7 h-7" />
@@ -234,7 +236,7 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
               </span>
               <span className="text-xs text-emerald-300 font-semibold">Planejamento Individualizado</span>
               <span className="text-[11px] text-slate-400 font-mono">
-                • {nutritionPlan.meals.length} refeições estruturadas
+                • {safeMeals.length} refeições estruturadas
               </span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight mt-1">
@@ -260,7 +262,7 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
               <div className="text-center px-2">
                 <p className="text-[10px] uppercase font-bold text-slate-400">Status de Hoje</p>
                 <p className="text-xl sm:text-2xl font-black text-white font-mono">
-                  {completedMeals.length} / {nutritionPlan.meals.length}
+                  {completedMeals.length} / {safeMeals.length}
                 </p>
                 <p className="text-[9px] text-emerald-400 font-medium">Refeições Concluídas</p>
               </div>
@@ -422,7 +424,7 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
         <div className="flex items-center gap-2">
           <Utensils className="w-5 h-5 text-emerald-400" />
           <h3 className="text-base sm:text-lg font-black text-white tracking-tight">
-            Refeições Prescritas ({nutritionPlan.meals.length})
+            Refeições Prescritas ({safeMeals.length})
           </h3>
         </div>
 
@@ -439,8 +441,9 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
 
       {/* Meals List (Refeições 1 a N) */}
       <div className="space-y-4">
-        {nutritionPlan.meals.map((meal, index) => {
+        {safeMeals.map((meal, index) => {
           const isExpanded = expandedMealId === meal.id;
+          const mealFoods = meal.foods || [];
 
           return (
             <motion.div
@@ -518,6 +521,7 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
                       onClick={(e) => {
                         e.stopPropagation();
                         soundFx.playClick();
+                        setSelectedMealIdForEdit(meal.id);
                         setIsEditPlanModalOpen(true);
                       }}
                       className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition"
@@ -561,12 +565,13 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
 
                     {/* Foods List */}
                     <div className="space-y-2.5">
-                      {meal.foods.length === 0 ? (
+                      {mealFoods.length === 0 ? (
                         <div className="p-5 rounded-2xl border border-dashed border-white/10 text-center text-xs text-slate-400 space-y-2">
                           <p>Nenhum alimento cadastrado nesta refeição.</p>
                           <button
                             onClick={() => {
                               soundFx.playClick();
+                              setSelectedMealIdForEdit(meal.id);
                               setIsEditPlanModalOpen(true);
                             }}
                             className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white font-bold inline-flex items-center gap-1 shadow"
@@ -575,7 +580,7 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
                           </button>
                         </div>
                       ) : (
-                        meal.foods.map((food) => (
+                        mealFoods.map((food) => (
                           <div
                             key={food.id}
                             className="p-3.5 rounded-2xl bg-white/5 border border-white/5 hover:border-white/15 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition"
@@ -651,6 +656,7 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
                       <button
                         onClick={() => {
                           soundFx.playClick();
+                          setSelectedMealIdForEdit(meal.id);
                           setIsEditPlanModalOpen(true);
                         }}
                         className="text-xs text-emerald-300 hover:text-emerald-200 font-bold flex items-center gap-1 py-1"
@@ -662,6 +668,7 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
                       <button
                         onClick={() => {
                           soundFx.playClick();
+                          setSelectedMealIdForEdit(meal.id);
                           setIsEditPlanModalOpen(true);
                         }}
                         className="text-xs text-slate-400 hover:text-white font-medium flex items-center gap-1 py-1"
@@ -691,23 +698,38 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
               <div className="w-12 h-12 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center mx-auto border border-rose-500/30">
                 <Trash2 className="w-6 h-6" />
               </div>
-              <h3 className="text-lg font-bold text-white">Excluir Refeição</h3>
+              <h3 className="text-lg font-bold text-white">
+                {safeMeals.length <= 1 ? 'Atenção: Refeição Única' : 'Excluir Refeição'}
+              </h3>
               <p className="text-xs text-slate-300">
-                Tem certeza que deseja excluir esta refeição e todos os seus alimentos do plano alimentar?
+                {safeMeals.length <= 1
+                  ? 'O plano alimentar do atleta precisa manter pelo menos uma refeição cadastrada para preservar o cálculo de macronutrientes diários.'
+                  : 'Tem certeza que deseja excluir esta refeição e todos os seus alimentos do plano alimentar?'}
               </p>
               <div className="flex items-center justify-center gap-3 pt-2">
-                <button
-                  onClick={() => setMealToDeleteId(null)}
-                  className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={() => handleConfirmDeleteMeal(mealToDeleteId)}
-                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition shadow-lg shadow-rose-950/50"
-                >
-                  Confirmar Exclusão
-                </button>
+                {safeMeals.length <= 1 ? (
+                  <button
+                    onClick={() => setMealToDeleteId(null)}
+                    className="px-5 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition shadow"
+                  >
+                    Entendido
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => setMealToDeleteId(null)}
+                      className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={() => handleConfirmDeleteMeal(mealToDeleteId)}
+                      className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition shadow-lg shadow-rose-950/50"
+                    >
+                      Confirmar Exclusão
+                    </button>
+                  </>
+                )}
               </div>
             </motion.div>
           </div>
@@ -719,7 +741,11 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
         {isEditPlanModalOpen && (
           <EditNutritionPlanModal
             isOpen={isEditPlanModalOpen}
-            onClose={() => setIsEditPlanModalOpen(false)}
+            onClose={() => {
+              setIsEditPlanModalOpen(false);
+              setSelectedMealIdForEdit(null);
+            }}
+            initialMealId={selectedMealIdForEdit}
             nutritionPlan={nutritionPlan}
             athleteWeightKg={athleteWeightKg}
             athlete={athlete}
@@ -727,6 +753,8 @@ export const NutritionView: React.FC<NutritionViewProps> = ({
               if (onUpdateNutritionPlan) {
                 onUpdateNutritionPlan(updatedPlan);
               }
+              setIsEditPlanModalOpen(false);
+              setSelectedMealIdForEdit(null);
             }}
           />
         )}
