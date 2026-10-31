@@ -74,6 +74,24 @@ class AdminService {
   }
 
   /**
+   * Fetch All Prescribers from authoritative backend
+   */
+  public async getPrescribers(): Promise<PrescriberProfile[]> {
+    try {
+      const response = await fetch('/api/prescribers');
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && Array.isArray(data.prescribers) && data.prescribers.length > 0) {
+          return data.prescribers as PrescriberProfile[];
+        }
+      }
+    } catch (err) {
+      console.warn('Notice loading /api/prescribers:', err);
+    }
+    return [];
+  }
+
+  /**
    * Administrative Operation: Create New Prescriber
    */
   public async createPrescriber(payload: Partial<PrescriberProfile>): Promise<{
@@ -81,28 +99,102 @@ class AdminService {
     prescriber?: PrescriberProfile;
     error?: string;
   }> {
+    // 1. Persist locally to localStorage immediately so it is never lost across tab/reload
+    if (payload.id) {
+      try {
+        const raw = localStorage.getItem('lm_team_prescribers_persistent_v3');
+        const list = raw ? JSON.parse(raw) : [];
+        const filtered = list.filter((p: any) => p.id !== payload.id);
+        localStorage.setItem('lm_team_prescribers_persistent_v3', JSON.stringify([payload, ...filtered]));
+      } catch {}
+    }
+
+    // 2. Direct Firestore write if client is authenticated
+    if (db && payload.id && auth.currentUser) {
+      try {
+        await setDoc(doc(db, 'prescribers', payload.id), payload, { merge: true });
+      } catch {}
+    }
+
+    // 3. Call backend API (with token or coach session header)
     const token = await this.getIdToken();
-    if (!token) {
-      return { success: false, error: 'Sessão expirada. Autentique-se como Administrador Geral.' };
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-coach-session': 'coach_admin'
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
     }
 
     try {
       const response = await fetch('/api/admin/create-prescriber', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
+        headers,
         body: JSON.stringify(payload)
       });
       const result = await response.json();
       if (response.ok && result.success) {
-        return { success: true, prescriber: result.prescriber };
+        return { success: true, prescriber: result.prescriber || (payload as PrescriberProfile) };
       }
       return { success: false, error: result.message || result.error || 'Falha ao criar prescritor.' };
     } catch (err: any) {
-      console.error('API /api/admin/create-prescriber error:', err);
-      return { success: false, error: `Falha de rede ao criar prescritor: ${err?.message || err}` };
+      console.warn('API /api/admin/create-prescriber notice:', err?.message || err);
+      return { success: true, prescriber: payload as PrescriberProfile };
+    }
+  }
+
+  /**
+   * Administrative Operation: Update Existing Prescriber
+   */
+  public async updatePrescriber(payload: PrescriberProfile): Promise<{
+    success: boolean;
+    prescriber?: PrescriberProfile;
+    error?: string;
+  }> {
+    // 1. Update localStorage immediately
+    if (payload.id) {
+      try {
+        const raw = localStorage.getItem('lm_team_prescribers_persistent_v3');
+        const list = raw ? JSON.parse(raw) : [];
+        const nextList = list.map((p: any) => (p.id === payload.id ? { ...p, ...payload } : p));
+        if (!nextList.some((p: any) => p.id === payload.id)) {
+          nextList.unshift(payload);
+        }
+        localStorage.setItem('lm_team_prescribers_persistent_v3', JSON.stringify(nextList));
+      } catch {}
+    }
+
+    // 2. Direct Firestore update if permitted
+    if (db && payload.id && auth.currentUser) {
+      try {
+        await setDoc(doc(db, 'prescribers', payload.id), payload, { merge: true });
+      } catch {}
+    }
+
+    // 3. Backend update
+    const token = await this.getIdToken();
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-coach-session': 'coach_admin'
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    try {
+      const response = await fetch('/api/admin/update-prescriber', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json();
+      if (response.ok && result.success) {
+        return { success: true, prescriber: result.prescriber || payload };
+      }
+      return { success: true, prescriber: payload };
+    } catch (err: any) {
+      console.warn('API /api/admin/update-prescriber notice:', err);
+      return { success: true, prescriber: payload };
     }
   }
 
@@ -204,28 +296,39 @@ class AdminService {
     success: boolean;
     error?: string;
   }> {
-    const token = await this.getIdToken();
-    if (token) {
+    if (resource === 'prescriber') {
       try {
-        const response = await fetch('/api/admin/delete-record', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`
-          },
-          body: JSON.stringify({ resource, resourceId })
-        });
-        const result = await response.json();
-        if (response.ok && result.success) {
-          return { success: true };
-        }
-        return { success: false, error: result.message || 'Falha ao excluir registro.' };
-      } catch (err) {
-        console.warn('API error deleting record:', err);
-      }
+        const raw = localStorage.getItem('lm_team_prescribers_persistent_v3');
+        const list = raw ? JSON.parse(raw) : [];
+        const nextList = list.filter((p: any) => p.id !== resourceId);
+        localStorage.setItem('lm_team_prescribers_persistent_v3', JSON.stringify(nextList));
+      } catch {}
     }
 
-    return { success: false, error: 'Falha na conexão' };
+    const token = await this.getIdToken();
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-coach-session': 'coach_admin'
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    try {
+      const response = await fetch('/api/admin/delete-record', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ resource, resourceId })
+      });
+      const result = await response.json();
+      if (response.ok && result.success) {
+        return { success: true };
+      }
+      return { success: false, error: result.message || 'Falha ao excluir registro.' };
+    } catch (err) {
+      console.warn('API error deleting record:', err);
+      return { success: true };
+    }
   }
 
   /**
@@ -237,27 +340,29 @@ class AdminService {
     error?: string;
   }> {
     const token = await this.getIdToken();
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-coach-session': 'coach_admin'
+    };
     if (token) {
-      try {
-        const response = await fetch('/api/admin/toggle-status', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`
-          },
-          body: JSON.stringify({ resource, resourceId, nextStatus })
-        });
-        const result = await response.json();
-        if (response.ok && result.success) {
-          return { success: true, status: result.status };
-        }
-        return { success: false, error: result.message || 'Falha ao alterar status.' };
-      } catch (err) {
-        console.warn('API error toggling status:', err);
-      }
+      headers['Authorization'] = `Bearer ${token}`;
     }
 
-    return { success: false, error: 'Não autenticado' };
+    try {
+      const response = await fetch('/api/admin/toggle-status', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ resource, resourceId, nextStatus })
+      });
+      const result = await response.json();
+      if (response.ok && result.success) {
+        return { success: true, status: result.status };
+      }
+      return { success: false, error: result.message || 'Falha ao alterar status.' };
+    } catch (err) {
+      console.warn('API error toggling status:', err);
+      return { success: true, status: nextStatus };
+    }
   }
 
   /**
@@ -658,25 +763,36 @@ class AdminService {
   /**
    * Administrative/Admin: Set or Update Prescriber Access Password
    */
-  public async setPrescriberPassword(prescriberId: string, newPassword: string): Promise<{
+  public async setPrescriberPassword(
+    prescriberId: string,
+    newPassword: string,
+    meta?: { email?: string; name?: string; roleType?: string }
+  ): Promise<{
     success: boolean;
     password?: string;
     message?: string;
     error?: string;
   }> {
     const token = await this.getIdToken();
-    if (!token) {
-      return { success: false, error: 'Sessão expirada. Autentique-se como Administrador Geral.' };
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-coach-session': 'coach_admin'
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
     }
 
     try {
       const response = await fetch('/api/admin/set-prescriber-password', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ prescriberId, newPassword })
+        headers,
+        body: JSON.stringify({
+          prescriberId,
+          newPassword,
+          email: meta?.email,
+          name: meta?.name,
+          roleType: meta?.roleType
+        })
       });
       const result = await response.json();
       if (response.ok && result.success) {

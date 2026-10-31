@@ -224,5 +224,23 @@ describe('Rotas HTTP de Autenticação e Sessão - LM Team API', () => {
       expect(res.status).toBe(401);
       expect(res.body.error).toBe('UNAUTHENTICATED');
     });
+
+    it('POST /api/admin/update-prescriber sem autenticação deve retornar 401 UNAUTHENTICATED', async () => {
+      const res = await request(app)
+        .post('/api/admin/update-prescriber')
+        .send({ id: 'presc-1793458233091', name: 'Prescritor Atualizado' });
+
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe('UNAUTHENTICATED');
+    });
+
+    it('POST /api/admin/set-prescriber-password sem autenticação deve retornar 401 UNAUTHENTICATED', async () => {
+      const res = await request(app)
+        .post('/api/admin/set-prescriber-password')
+        .send({ prescriberId: 'presc-1793458233091', newPassword: 'Personal10' });
+
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe('UNAUTHENTICATED');
+    });
   });
 });

@@ -305,7 +305,11 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
           setErrorMessage(res.error || 'Falha ao atualizar senha do aluno.');
         }
       } else {
-        const res = await adminService.setPrescriberPassword(selectedUser.id, newPasswordInput);
+        const res = await adminService.setPrescriberPassword(selectedUser.id, newPasswordInput, {
+          email: selectedUser.email || emailInput.trim(),
+          name: selectedUser.name,
+          roleType: selectedUser.roleLabel
+        });
         if (res.success) {
           soundFx.playSuccess();
           setSuccessMessage(`Nova senha de ${selectedUser.name} configurada com sucesso no Firebase Auth!`);

@@ -278,6 +278,177 @@ export interface SyncLogEntry {
   errorCount?: number;
 }
 
+export type SyncErrorCategory = 'RATE_LIMIT' | 'PERMISSION' | 'TRANSIENT' | 'FATAL';
+
+export interface ExponentialBackoffOptions {
+  baseDelayMs?: number;
+  maxDelayMs?: number;
+  jitterMs?: number;
+  maxRetries?: number;
+}
+
+export interface BackoffRetryConfig extends ExponentialBackoffOptions {
+  operationName?: string;
+  onRetry?: (attempt: number, delayMs: number, error: any, category: SyncErrorCategory) => void;
+}
+
+/**
+ * Classifies Firestore or network errors into resilient error categories:
+ * - RATE_LIMIT: Resource exhausted, too many requests, quota exceeded, 429
+ * - PERMISSION: Missing or insufficient permissions, permission-denied, 403
+ * - TRANSIENT: Temporary unavailability, timeout, network failure
+ * - FATAL: Invalid arguments, schema or malformed request
+ */
+export function classifySyncError(error: any): SyncErrorCategory {
+  if (!error) return 'TRANSIENT';
+  const code = (error.code || error.status || '').toString().toLowerCase();
+  const message = (error.message || String(error)).toLowerCase();
+
+  // Rate Limits / Quotas
+  if (
+    code.includes('resource-exhausted') ||
+    code.includes('429') ||
+    message.includes('quota') ||
+    message.includes('rate limit') ||
+    message.includes('too many requests') ||
+    message.includes('resource-exhausted') ||
+    message.includes('resource exhausted') ||
+    message.includes('exceeded quota')
+  ) {
+    return 'RATE_LIMIT';
+  }
+
+  // Permission Denied / Security Rules / Token Propagation
+  if (
+    code.includes('permission-denied') ||
+    code.includes('unauthorized') ||
+    code.includes('403') ||
+    message.includes('permission') ||
+    message.includes('insufficient permissions') ||
+    message.includes('permission-denied') ||
+    message.includes('acesso negado') ||
+    message.includes('unauthorized')
+  ) {
+    return 'PERMISSION';
+  }
+
+  // Transient / Network / Deadline
+  if (
+    code.includes('unavailable') ||
+    code.includes('deadline-exceeded') ||
+    code.includes('network') ||
+    code.includes('cancelled') ||
+    code.includes('aborted') ||
+    message.includes('network') ||
+    message.includes('timeout') ||
+    message.includes('connection') ||
+    message.includes('unavailable') ||
+    message.includes('failed to fetch')
+  ) {
+    return 'TRANSIENT';
+  }
+
+  // Fatal validation errors
+  if (
+    code.includes('invalid-argument') ||
+    code.includes('not-found') ||
+    code.includes('already-exists') ||
+    message.includes('invalid document')
+  ) {
+    return 'FATAL';
+  }
+
+  return 'TRANSIENT';
+}
+
+/**
+ * Calculates exponential backoff delay with jitter tailored for each error category:
+ * - RATE_LIMIT: Higher initial base (2000ms), ceiling at 60s
+ * - PERMISSION: Base (2000ms), ceiling at 90s (allowing auth session / claims to refresh)
+ * - TRANSIENT: Base (1000ms), ceiling at 30s
+ */
+export function calculateExponentialBackoffDelay(
+  retryCount: number,
+  category: SyncErrorCategory,
+  customOptions?: ExponentialBackoffOptions
+): number {
+  let baseDelay = customOptions?.baseDelayMs;
+  let maxDelay = customOptions?.maxDelayMs;
+  let jitterMax = customOptions?.jitterMs;
+
+  if (!baseDelay) {
+    switch (category) {
+      case 'RATE_LIMIT':
+        baseDelay = 2000;
+        maxDelay = maxDelay ?? 60000;
+        jitterMax = jitterMax ?? 500;
+        break;
+      case 'PERMISSION':
+        baseDelay = 2000;
+        maxDelay = maxDelay ?? 90000;
+        jitterMax = jitterMax ?? 500;
+        break;
+      case 'TRANSIENT':
+      default:
+        baseDelay = 1000;
+        maxDelay = maxDelay ?? 30000;
+        jitterMax = jitterMax ?? 300;
+        break;
+    }
+  }
+
+  // Formula: baseDelay * 2^(retryCount - 1)
+  // retryCount is 1-indexed (item.retryCount starts at 1 upon first failure)
+  const exponent = Math.max(0, retryCount - 1);
+  const calculated = baseDelay * Math.pow(2, exponent);
+  const capped = Math.min(calculated, maxDelay || 60000);
+  const jitter = Math.floor(Math.random() * (jitterMax ?? 300));
+
+  return capped + jitter;
+}
+
+/**
+ * Executes a Firestore asynchronous operation wrapped in an exponential backoff retry loop.
+ * Automatically handles rate limits and permission issues (triggering token refresh if needed).
+ */
+export async function executeWithExponentialBackoff<T>(
+  operation: () => Promise<T>,
+  config?: BackoffRetryConfig
+): Promise<T> {
+  const maxRetries = config?.maxRetries ?? 3;
+  let attempt = 0;
+
+  while (true) {
+    try {
+      return await operation();
+    } catch (err: any) {
+      attempt++;
+      const category = classifySyncError(err);
+
+      // Do not retry fatal errors or if retries exhausted
+      if (category === 'FATAL' || attempt > maxRetries) {
+        throw err;
+      }
+
+      // If permission error and user is logged in, attempt silent token refresh
+      if (category === 'PERMISSION' && auth?.currentUser) {
+        try {
+          await auth.currentUser.getIdToken(true);
+        } catch {
+          // Ignore refresh failure and continue to backoff
+        }
+      }
+
+      const delayMs = calculateExponentialBackoffDelay(attempt, category, config);
+      if (config?.onRetry) {
+        config.onRetry(attempt, delayMs, err, category);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
 export type SyncEventListener = (status: CloudSyncStatus, log?: SyncLogEntry) => void;
 
 export const STORAGE_QUEUE_KEY = 'lm_team_checkin_sync_queue_v1';
@@ -310,6 +481,7 @@ export class SyncService {
   private customDb: Firestore | null = null;
   private customStorage: Storage | null = null;
   private lastSyncedCount: number = 0;
+  private rateLimitUntil: number = 0;
 
   constructor(customDb?: Firestore | null, customStorage?: Storage | null) {
     if (customDb !== undefined) {
@@ -758,8 +930,12 @@ export class SyncService {
 
         if (!this.isOnline) break;
 
-        // Check if new eligible items arrived during this batch
         const now = Date.now();
+        if (this.rateLimitUntil && now < this.rateLimitUntil) {
+          break;
+        }
+
+        // Check if new eligible items arrived during this batch
         const hasEligibleRemaining = this.queue.some((item) => {
           if (options?.forceRetry) return true;
           return !item.nextRetryAt || now >= item.nextRetryAt;
@@ -944,13 +1120,19 @@ export class SyncService {
         });
       } catch (writeErr: any) {
         const errorMsg = writeErr?.message || String(writeErr);
+        const category = classifySyncError(writeErr);
+
         item.retryCount = (item.retryCount || 0) + 1;
         item.lastError = errorMsg;
         item.lastErrorMessage = errorMsg;
 
-        const baseDelay = Math.min(1000 * Math.pow(2, item.retryCount), 60000);
-        const jitter = Math.floor(Math.random() * 300);
-        item.nextRetryAt = Date.now() + baseDelay + jitter;
+        // If permission error and user is authenticated, trigger silent token refresh
+        if (category === 'PERMISSION' && auth?.currentUser) {
+          auth.currentUser.getIdToken(true).catch(() => {});
+        }
+
+        const baseDelay = calculateExponentialBackoffDelay(item.retryCount, category);
+        item.nextRetryAt = Date.now() + baseDelay;
 
         failedCount++;
         results.push({
@@ -962,6 +1144,19 @@ export class SyncService {
           status: 'FAILED',
           error: errorMsg
         });
+
+        // If rate limit error occurs, pause remaining batch execution early to prevent cascading quota exhaustion
+        if (category === 'RATE_LIMIT') {
+          this.rateLimitUntil = Date.now() + baseDelay;
+          this.notify({
+            id: `log_${Date.now()}`,
+            timestamp: new Date().toLocaleTimeString('pt-BR'),
+            type: 'SYNC_ERROR',
+            message: `Limite de taxa (rate limit / quota) atingido no Firestore. Pausando lote com backoff exponencial (~${Math.ceil(baseDelay / 1000)}s).`,
+            errorCount: 1
+          });
+          break;
+        }
       }
     }
 
@@ -1031,23 +1226,31 @@ export class SyncService {
     }
 
     const now = Date.now();
+    const candidateTimes: number[] = [];
+    if (this.rateLimitUntil && this.rateLimitUntil > now) {
+      candidateTimes.push(this.rateLimitUntil);
+    }
     const itemsWaiting = this.queue.filter(
       (item) => (item.retryCount || 0) > 0 && item.nextRetryAt && item.nextRetryAt > now
     );
+    for (const item of itemsWaiting) {
+      if (item.nextRetryAt) candidateTimes.push(item.nextRetryAt);
+    }
 
-    if (itemsWaiting.length === 0) {
+    if (candidateTimes.length === 0) {
       return;
     }
 
-    const earliestRetryAt = Math.min(...itemsWaiting.map((item) => item.nextRetryAt!));
+    const earliestRetryAt = Math.min(...candidateTimes);
     const delayMs = Math.max(50, earliestRetryAt - now);
 
     const timeStr = new Date(earliestRetryAt).toLocaleTimeString('pt-BR');
+    const scheduledCount = itemsWaiting.length || this.queue.length;
     this.notify({
       id: `log_${Date.now()}`,
       timestamp: new Date().toLocaleTimeString('pt-BR'),
       type: 'RETRY_SCHEDULED',
-      message: `Retomada automática de retry agendada para ${timeStr} (~${Math.ceil(delayMs / 1000)}s) para ${itemsWaiting.length} item(ns).`
+      message: `Retomada automática de retry agendada para ${timeStr} (~${Math.ceil(delayMs / 1000)}s) para ${scheduledCount} item(ns).`
     });
 
     this.retryTimeoutId = setTimeout(() => {
@@ -1112,7 +1315,10 @@ export class SyncService {
     }
 
     try {
-      await setDoc(doc(currentDb, validation.collectionPath, validation.documentId), supplement, { merge: true });
+      await executeWithExponentialBackoff(
+        () => setDoc(doc(currentDb, validation.collectionPath, validation.documentId), supplement, { merge: true }),
+        { operationName: `saveSupplement-${supplement.id}`, maxRetries: 2 }
+      );
       this.notify({
         id: `log_${Date.now()}`,
         timestamp: new Date().toLocaleTimeString('pt-BR'),
@@ -1143,7 +1349,10 @@ export class SyncService {
     }
 
     try {
-      await deleteDoc(doc(currentDb, validation.collectionPath, validation.documentId));
+      await executeWithExponentialBackoff(
+        () => deleteDoc(doc(currentDb, validation.collectionPath, validation.documentId)),
+        { operationName: `deleteSupplement-${supplementId}`, maxRetries: 2 }
+      );
       this.notify({
         id: `log_${Date.now()}`,
         timestamp: new Date().toLocaleTimeString('pt-BR'),
@@ -1188,7 +1397,10 @@ export class SyncService {
     if (!currentDb || !athleteId || !plan) return false;
 
     try {
-      await setDoc(doc(currentDb, 'prescriptions/nutrition/athletes', athleteId), plan, { merge: true });
+      await executeWithExponentialBackoff(
+        () => setDoc(doc(currentDb, 'prescriptions/nutrition/athletes', athleteId), plan, { merge: true }),
+        { operationName: `saveNutritionPlan-${athleteId}`, maxRetries: 2 }
+      );
       return true;
     } catch (err) {
       console.warn(`Error saving nutrition plan for athlete ${athleteId} to Firestore:`, err);
@@ -1230,7 +1442,10 @@ export class SyncService {
     if (!currentDb || !athleteId || !splits) return false;
 
     try {
-      await setDoc(doc(currentDb, 'prescriptions/workouts/athletes', athleteId), { splits, athleteId }, { merge: true });
+      await executeWithExponentialBackoff(
+        () => setDoc(doc(currentDb, 'prescriptions/workouts/athletes', athleteId), { splits, athleteId }, { merge: true }),
+        { operationName: `saveWorkoutSplits-${athleteId}`, maxRetries: 2 }
+      );
       return true;
     } catch (err) {
       console.warn(`Error saving workouts for athlete ${athleteId} to Firestore:`, err);
@@ -1239,24 +1454,104 @@ export class SyncService {
   }
 
   /**
-   * Load prescribers from Firestore
+   * Load prescribers from Firestore with backend fallback
    */
   public async loadPrescribersFromFirestore(): Promise<PrescriberProfile[]> {
     const currentDb = this.getEffectiveDb();
-    if (!currentDb) return [];
+    const currentUser = auth?.currentUser;
+
+    // 1. If user is authenticated in Firebase Auth, query Firestore directly
+    if (currentDb && currentUser) {
+      try {
+        const snap = await getDocs(collection(currentDb, 'prescribers'));
+        const list: PrescriberProfile[] = [];
+        snap.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (data && data.id) {
+            list.push(data as PrescriberProfile);
+          }
+        });
+        if (list.length > 0) return list;
+      } catch (err) {
+        // Silently fall back to backend endpoint
+      }
+    }
+
+    // 2. Fetch authoritative prescribers from backend /api/prescribers (bypasses rules safely via Admin SDK)
     try {
-      const snap = await getDocs(collection(currentDb, 'prescribers'));
-      const list: PrescriberProfile[] = [];
-      snap.forEach((docSnap) => {
-        const data = docSnap.data();
-        if (data && data.id) {
-          list.push(data as PrescriberProfile);
+      if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
+        const response = await fetch('/api/prescribers');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && Array.isArray(data.prescribers) && data.prescribers.length > 0) {
+            return data.prescribers as PrescriberProfile[];
+          }
         }
+      }
+    } catch {}
+
+    return [];
+  }
+
+  /**
+   * Direct save of prescriber profile to Firestore
+   */
+  public async savePrescriberToFirestore(prescriber: PrescriberProfile): Promise<boolean> {
+    const currentDb = this.getEffectiveDb();
+    if (!currentDb || !prescriber?.id) return false;
+
+    const validation = validateFirestorePath('prescribers', prescriber.id);
+    if (!validation.isValid) {
+      console.warn('Invalid prescriber path:', validation.error);
+      return false;
+    }
+
+    try {
+      await executeWithExponentialBackoff(
+        () => setDoc(doc(currentDb, 'prescribers', prescriber.id), prescriber, { merge: true }),
+        { operationName: `savePrescriber-${prescriber.id}`, maxRetries: 2 }
+      );
+      this.notify({
+        id: `log_${Date.now()}`,
+        timestamp: new Date().toLocaleTimeString('pt-BR'),
+        type: 'SYNC_SUCCESS',
+        message: `Perfil do prescritor "${prescriber.name}" sincronizado com Firestore.`
       });
-      return list;
+      return true;
     } catch (err) {
-      console.warn('Could not load prescribers from Firestore:', err);
-      return [];
+      console.warn('Error saving prescriber to Firestore:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Direct delete of prescriber profile from Firestore
+   */
+  public async deletePrescriberFromFirestore(prescriberId: string): Promise<boolean> {
+    const currentDb = this.getEffectiveDb();
+    if (!currentDb || !prescriberId) return false;
+
+    const validation = validateFirestorePath('prescribers', prescriberId);
+    if (!validation.isValid) {
+      console.warn('Invalid prescriber path for deletion:', validation.error);
+      return false;
+    }
+
+    try {
+      await executeWithExponentialBackoff(
+        () => deleteDoc(doc(currentDb, 'prescribers', prescriberId)),
+        { operationName: `deletePrescriber-${prescriberId}`, maxRetries: 2 }
+      );
+      this.notify({
+        id: `log_${Date.now()}`,
+        timestamp: new Date().toLocaleTimeString('pt-BR'),
+        type: 'SYNC_SUCCESS',
+        message: `Prescritor ID "${prescriberId}" excluído do Firestore.`
+      });
+      return true;
+    } catch (err) {
+      console.warn('Error deleting prescriber from Firestore:', err);
+      return false;
     }
   }
 
@@ -1361,12 +1656,29 @@ export class SyncService {
     }
 
     try {
+      const currentUser = auth?.currentUser;
       const firestorePrescribers = await this.loadPrescribersFromFirestore();
-      const firestoreAthletes = await this.loadAthletesFromFirestore();
+      const firestoreAthletes = currentUser ? await this.loadAthletesFromFirestore() : [];
+
+      // Read locally stored profiles to avoid overwriting newly created profiles
+      let localPrescribers: PrescriberProfile[] = [];
+      try {
+        const rawLocal = localStorage.getItem('lm_team_prescribers_persistent_v3') || localStorage.getItem('lm_team_prescribers_v2');
+        if (rawLocal) {
+          const parsed = JSON.parse(rawLocal);
+          if (Array.isArray(parsed)) localPrescribers = parsed;
+        }
+      } catch {}
 
       const prescribersMap = new Map<string, PrescriberProfile>();
       for (const p of defaultPrescribers) {
         prescribersMap.set(p.id, p);
+      }
+      for (const p of localPrescribers) {
+        prescribersMap.set(p.id, {
+          ...(prescribersMap.get(p.id) || {}),
+          ...p
+        });
       }
       for (const p of firestorePrescribers) {
         prescribersMap.set(p.id, {
@@ -1375,23 +1687,41 @@ export class SyncService {
         });
       }
 
-      for (const p of prescribersMap.values()) {
-        const existsInFirestore = firestorePrescribers.some((fp) => fp.id === p.id);
-        if (!existsInFirestore) {
-          try {
-            const validation = validateFirestorePath('prescribers', p.id);
-            if (validation.isValid) {
-              await setDoc(doc(currentDb, 'prescribers', p.id), p, { merge: true });
+      // Only attempt remote seeding if user is authenticated with proper privileges
+      if (currentUser && currentDb) {
+        for (const p of prescribersMap.values()) {
+          const existsInFirestore = firestorePrescribers.some((fp) => fp.id === p.id);
+          if (!existsInFirestore) {
+            try {
+              const validation = validateFirestorePath('prescribers', p.id);
+              if (validation.isValid) {
+                await setDoc(doc(currentDb, 'prescribers', p.id), p, { merge: true });
+              }
+            } catch (e) {
+              // Silently ignore seed write permission issues
             }
-          } catch (e) {
-            console.warn(`Could not seed prescriber ${p.id} to Firestore:`, e);
           }
         }
       }
 
+      let localAthletes: AthleteProfile[] = [];
+      try {
+        const rawLocal = localStorage.getItem('lm_team_athletes_v3');
+        if (rawLocal) {
+          const parsed = JSON.parse(rawLocal);
+          if (Array.isArray(parsed)) localAthletes = parsed;
+        }
+      } catch {}
+
       const athletesMap = new Map<string, AthleteProfile>();
       for (const a of defaultAthletes) {
         athletesMap.set(a.id, a);
+      }
+      for (const a of localAthletes) {
+        athletesMap.set(a.id, {
+          ...(athletesMap.get(a.id) || {}),
+          ...a
+        });
       }
       for (const a of firestoreAthletes) {
         athletesMap.set(a.id, {
@@ -1400,22 +1730,30 @@ export class SyncService {
         });
       }
 
-      for (const a of athletesMap.values()) {
-        const existsInFirestore = firestoreAthletes.some((fa) => fa.id === a.id);
-        if (!existsInFirestore) {
-          try {
-            const validation = validateFirestorePath('athletes', a.id);
-            if (validation.isValid) {
-              await setDoc(doc(currentDb, 'athletes', a.id), a, { merge: true });
+      // Only attempt remote seeding if user is authenticated with proper privileges
+      if (currentUser && currentDb) {
+        for (const a of athletesMap.values()) {
+          const existsInFirestore = firestoreAthletes.some((fa) => fa.id === a.id);
+          if (!existsInFirestore) {
+            try {
+              const validation = validateFirestorePath('athletes', a.id);
+              if (validation.isValid) {
+                await setDoc(doc(currentDb, 'athletes', a.id), a, { merge: true });
+              }
+            } catch (e) {
+              // Silently ignore seed write permission issues
             }
-          } catch (e) {
-            console.warn(`Could not seed athlete ${a.id} to Firestore:`, e);
           }
         }
       }
 
+      const mergedPrescribers = Array.from(prescribersMap.values());
+      try {
+        localStorage.setItem('lm_team_prescribers_persistent_v3', JSON.stringify(mergedPrescribers));
+      } catch {}
+
       return {
-        prescribers: Array.from(prescribersMap.values()),
+        prescribers: mergedPrescribers,
         athletes: Array.from(athletesMap.values())
       };
     } catch (err) {
@@ -1425,22 +1763,38 @@ export class SyncService {
   }
 
   /**
-   * Load exercises from Firestore library
+   * Load exercises from Firestore library with backend fallback
    */
   public async loadExercisesFromFirestore(): Promise<LibraryExercise[]> {
     const currentDb = this.getEffectiveDb();
-    if (!currentDb) return [];
-    try {
-      const snap = await getDocs(collection(currentDb, 'exercises'));
-      const exercises: LibraryExercise[] = [];
-      snap.forEach((d) => {
-        exercises.push(d.data() as LibraryExercise);
-      });
-      return exercises;
-    } catch (err) {
-      console.warn('Could not load exercises from Firestore:', err);
-      return [];
+    const currentUser = auth?.currentUser;
+
+    if (currentDb && currentUser) {
+      try {
+        const snap = await getDocs(collection(currentDb, 'exercises'));
+        const exercises: LibraryExercise[] = [];
+        snap.forEach((d) => {
+          exercises.push(d.data() as LibraryExercise);
+        });
+        if (exercises.length > 0) return exercises;
+      } catch (err) {
+        // Silently fall through
+      }
     }
+
+    try {
+      if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
+        const res = await fetch('/api/exercises');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.exercises) && data.exercises.length > 0) {
+            return data.exercises as LibraryExercise[];
+          }
+        }
+      }
+    } catch {}
+
+    return [];
   }
 
   /**
@@ -1457,7 +1811,10 @@ export class SyncService {
     }
 
     try {
-      await setDoc(doc(currentDb, 'exercises', exercise.id), exercise, { merge: true });
+      await executeWithExponentialBackoff(
+        () => setDoc(doc(currentDb, 'exercises', exercise.id), exercise, { merge: true }),
+        { operationName: `saveExercise-${exercise.id}`, maxRetries: 2 }
+      );
       this.notify({
         id: `log_${Date.now()}`,
         timestamp: new Date().toLocaleTimeString('pt-BR'),
@@ -1485,7 +1842,10 @@ export class SyncService {
     }
 
     try {
-      await deleteDoc(doc(currentDb, 'exercises', exerciseId));
+      await executeWithExponentialBackoff(
+        () => deleteDoc(doc(currentDb, 'exercises', exerciseId)),
+        { operationName: `deleteExercise-${exerciseId}`, maxRetries: 2 }
+      );
       this.notify({
         id: `log_${Date.now()}`,
         timestamp: new Date().toLocaleTimeString('pt-BR'),
@@ -1506,9 +1866,7 @@ export class SyncService {
     defaultExercises: LibraryExercise[]
   ): Promise<LibraryExercise[]> {
     const currentDb = this.getEffectiveDb();
-    if (!currentDb) {
-      return defaultExercises;
-    }
+    const currentUser = auth?.currentUser;
 
     try {
       const firestoreExercises = await this.loadExercisesFromFirestore();
@@ -1525,16 +1883,19 @@ export class SyncService {
         });
       }
 
-      for (const ex of exercisesMap.values()) {
-        const existsInFirestore = firestoreExercises.some((fe) => fe.id === ex.id);
-        if (!existsInFirestore) {
-          try {
-            const validation = validateFirestorePath('exercises', ex.id);
-            if (validation.isValid) {
-              await setDoc(doc(currentDb, 'exercises', ex.id), ex, { merge: true });
+      // Only attempt remote seeding if user is authenticated with professional permissions
+      if (currentUser && currentDb) {
+        for (const ex of exercisesMap.values()) {
+          const existsInFirestore = firestoreExercises.some((fe) => fe.id === ex.id);
+          if (!existsInFirestore) {
+            try {
+              const validation = validateFirestorePath('exercises', ex.id);
+              if (validation.isValid) {
+                await setDoc(doc(currentDb, 'exercises', ex.id), ex, { merge: true });
+              }
+            } catch (e) {
+              // Silently ignore seed write permission issues
             }
-          } catch (e) {
-            console.warn(`Could not seed exercise ${ex.id} to Firestore:`, e);
           }
         }
       }

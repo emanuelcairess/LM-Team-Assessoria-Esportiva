@@ -193,7 +193,7 @@ export default function App() {
     let isMounted = true;
     const syncCredentialsFromFirestore = async () => {
       try {
-        const result = await syncService.initializeAndSyncCredentials(INITIAL_PRESCRIBERS, OTHER_ATHLETES);
+        const result = await syncService.initializeAndSyncCredentials(prescribersList, athletesList);
         if (!isMounted) return;
 
         if (result.prescribers && result.prescribers.length > 0) {
@@ -527,6 +527,23 @@ export default function App() {
           console.warn('Error fetching authoritative profile on auth change:', authErr);
         }
 
+        // Re-sync credentials and exercises with authenticated permissions
+        try {
+          const freshCredentials = await syncService.initializeAndSyncCredentials(prescribersList, athletesList);
+          if (freshCredentials.prescribers && freshCredentials.prescribers.length > 0) {
+            setPrescribersList(freshCredentials.prescribers);
+          }
+          if (freshCredentials.athletes && freshCredentials.athletes.length > 0) {
+            setAthletesList(freshCredentials.athletes);
+          }
+          const freshExercises = await syncService.initializeAndSyncExercises(INITIAL_EXERCISE_LIBRARY);
+          if (freshExercises && freshExercises.length > 0) {
+            setExerciseLibrary(freshExercises);
+          }
+        } catch (syncErr) {
+          console.warn('Background sync after login:', syncErr);
+        }
+
         // Match athlete by phone if available
         if (firebaseUser.phoneNumber) {
           const digits = firebaseUser.phoneNumber.replace(/\D/g, '');
@@ -712,11 +729,32 @@ export default function App() {
       return;
     }
 
-    setPrescribersList((prev) => [newPrescriber, ...prev]);
+    setPrescribersList((prev) => {
+      const next = [newPrescriber, ...prev.filter((p) => p.id !== newPrescriber.id)];
+      try {
+        localStorage.setItem('lm_team_prescribers_persistent_v3', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
 
+    // 1. Direct Firestore write
+    try {
+      await syncService.savePrescriberToFirestore(newPrescriber);
+    } catch {}
+
+    // 2. Call backend for Auth provisioning & server-side audit
     try {
       const res = await adminService.createPrescriber(newPrescriber);
-      if (!res.success && res.error) {
+      if (res.success && res.prescriber) {
+        const serverSynced = res.prescriber;
+        setPrescribersList((prev) => {
+          const next = prev.map((p) => (p.id === newPrescriber.id ? serverSynced : p));
+          try {
+            localStorage.setItem('lm_team_prescribers_persistent_v3', JSON.stringify(next));
+          } catch {}
+          return next;
+        });
+      } else if (!res.success && res.error) {
         console.warn('Backend prescriber creation fallback:', res.error);
         recordMutation('prescriber_profile', newPrescriber.id, newPrescriber, 'INSERT');
       }
@@ -745,17 +783,28 @@ export default function App() {
       return;
     }
 
-    setPrescribersList((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+    setPrescribersList((prev) => {
+      const next = prev.map((p) => (p.id === updated.id ? updated : p));
+      try {
+        localStorage.setItem('lm_team_prescribers_persistent_v3', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
     if (currentPrescriber.id === updated.id) {
       setCurrentPrescriber(updated);
     }
 
+    // 1. Direct Firestore update
+    try {
+      await syncService.savePrescriberToFirestore(updated);
+    } catch {}
+
+    // 2. Backend update route
     try {
       if (updated.isAdmin && !target?.isAdmin) {
         await adminService.promoteAdmin({ prescriberId: updated.id });
-      } else {
-        await adminService.createPrescriber(updated);
       }
+      await adminService.updatePrescriber(updated);
     } catch (e) {
       recordMutation('prescriber_profile', updated.id, updated, 'UPDATE');
     }
@@ -782,10 +831,19 @@ export default function App() {
 
     const remaining = prescribersList.filter((p) => p.id !== prescriberId);
     setPrescribersList(remaining);
+    try {
+      localStorage.setItem('lm_team_prescribers_persistent_v3', JSON.stringify(remaining));
+    } catch {}
     if (currentPrescriber.id === prescriberId) {
       setCurrentPrescriber(remaining[0] || INITIAL_PRESCRIBERS[0]);
     }
 
+    // 1. Direct Firestore deletion
+    try {
+      await syncService.deletePrescriberFromFirestore(prescriberId);
+    } catch {}
+
+    // 2. Server-side deletion
     try {
       await adminService.deleteRecord('prescriber', prescriberId);
     } catch (e) {
@@ -807,7 +865,13 @@ export default function App() {
 
     const nextStatus = target.status === 'Inativo' ? 'Ativo' : 'Inativo';
     const updated = { ...target, status: nextStatus as PrescriberProfile['status'] };
-    setPrescribersList((prev) => prev.map((p) => (p.id === prescriberId ? updated : p)));
+    setPrescribersList((prev) => {
+      const next = prev.map((p) => (p.id === prescriberId ? updated : p));
+      try {
+        localStorage.setItem('lm_team_prescribers_persistent_v3', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
     if (currentPrescriber.id === prescriberId) {
       setCurrentPrescriber(updated);
     }
